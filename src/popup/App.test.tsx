@@ -28,6 +28,7 @@ interface RenderOptions {
   groups?: Group[];
   pullRequest?: string | null;
   candidates?: ListReviewersReply;
+  searches?: Record<string, ReviewerCandidate[]>;
   draft?: Draft;
   requestReview?: (members: string[]) => Promise<RequestReviewReply>;
 }
@@ -36,6 +37,7 @@ const renderApp = ({
   groups = [],
   pullRequest = "acme/widgets#7",
   candidates = { ok: true, candidates: reviewers },
+  searches = {},
   draft = emptyDraft,
   requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
 }: RenderOptions = {}) => {
@@ -47,7 +49,11 @@ const renderApp = ({
     load: vi.fn<DraftStore["load"]>().mockResolvedValueOnce(draft),
     save: vi.fn<DraftStore["save"]>().mockResolvedValue(undefined),
   } satisfies DraftStore;
-  const listReviewers = vi.fn<() => Promise<ListReviewersReply>>().mockResolvedValueOnce(candidates);
+  const listReviewers = vi
+    .fn<(query: string) => Promise<ListReviewersReply>>()
+    .mockImplementation((query) =>
+      Promise.resolve(query === "" ? candidates : { ok: true, candidates: searches[query] ?? [] }),
+    );
   render(
     <App
       store={store}
@@ -89,13 +95,49 @@ describe("App on a pull request", () => {
     expect(within(screen.getByRole("listitem", { name: "acme/backend" })).getByText("team")).toBeTruthy();
   });
 
-  it("narrows the list to people whose login or name matches the search", async () => {
-    renderApp();
+  it("asks GitHub for the people matching the search and lists only them", async () => {
+    const { listReviewers } = renderApp({ searches: { lisa: [reviewers[0] ?? candidate("mona")] } });
     await screen.findByRole("list", { name: "People" });
 
     fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "lisa" } });
 
-    expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual(["mona"]);
+    expect(await screen.findByText("Mona Lisa")).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual(["mona"]),
+    );
+    expect(listReviewers).toHaveBeenLastCalledWith("lisa");
+  });
+
+  it("keeps someone found only by search ticked and visible after the search is cleared", async () => {
+    renderApp({
+      searches: { space: [candidate("spacecat", { description: "Space Cat" })] },
+    });
+    await screen.findByRole("list", { name: "People" });
+    fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "space" } });
+    await tick("spacecat");
+
+    fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "" } });
+
+    await vi.waitFor(() =>
+      expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual([
+        "spacecat",
+        "mona",
+        "hubot",
+        "octocat",
+        "acme/backend",
+      ]),
+    );
+    expect(isTicked("spacecat")).toBe(true);
+    expect(screen.getByText("Space Cat")).toBeTruthy();
+  });
+
+  it("says when nobody matches the search", async () => {
+    renderApp();
+    await screen.findByRole("list", { name: "People" });
+
+    fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "zzz" } });
+
+    expect(await screen.findByText("Nobody matches “zzz”.")).toBeTruthy();
   });
 
   it("requests review from the ticked people and clears the ticks", async () => {
@@ -193,15 +235,19 @@ describe("App on a pull request", () => {
     expect(save).toHaveBeenCalledWith([{ id: "g1", name: "Backend", members: ["mona", "octocat"] }]);
   });
 
-  it("keeps a group member this repository does not offer, ticked, while editing", async () => {
+  it("keeps a group member missing from GitHub's list ticked at the top while editing", async () => {
     renderApp({ groups: [{ id: "g2", name: "Mixed", members: ["stranger", "mona"] }] });
 
     fireEvent.click(await screen.findByRole("button", { name: "Edit Mixed" }));
 
+    expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual([
+      "stranger",
+      "mona",
+      "hubot",
+      "octocat",
+      "acme/backend",
+    ]);
     expect(isTicked("stranger")).toBe(true);
-    expect(
-      within(screen.getByRole("listitem", { name: "stranger" })).getByText("not offered on this PR"),
-    ).toBeTruthy();
   });
 
   it("restores an edit in progress after the dropdown reopens", async () => {

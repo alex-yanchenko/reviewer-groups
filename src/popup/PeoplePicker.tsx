@@ -1,68 +1,82 @@
-import { useState } from "react";
 import type { ReviewerCandidate } from "../messages";
 
-interface PersonRow extends ReviewerCandidate {
-  offered: boolean;
-}
+export type KnownPeople = Record<string, ReviewerCandidate>;
 
-const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const loginKey = (login: string) => login.toLowerCase();
 
-const rowsFor = (candidates: ReviewerCandidate[], selection: string[]): PersonRow[] => {
-  const notOffered = selection
-    .filter((login) => !candidates.some((candidate) => sameLogin(candidate.login, login)))
-    .map((login) => ({
-      login,
-      description: "",
-      avatarUrl: null,
-      team: login.includes("/"),
-      requested: false,
-      offered: false,
-    }));
-  return [...notOffered, ...candidates.map((candidate) => ({ ...candidate, offered: true }))];
+export const rememberPeople = (known: KnownPeople, found: ReviewerCandidate[]): KnownPeople => ({
+  ...known,
+  ...Object.fromEntries(found.map((candidate) => [loginKey(candidate.login), candidate])),
+});
+
+const unknownPerson = (login: string): ReviewerCandidate => ({
+  login,
+  description: "",
+  avatarUrl: null,
+  team: login.includes("/"),
+  requested: false,
+});
+
+const rowsFor = (
+  found: ReviewerCandidate[],
+  selection: string[],
+  known: KnownPeople,
+): ReviewerCandidate[] => {
+  const foundKeys = new Set(found.map((candidate) => loginKey(candidate.login)));
+  const tickedElsewhere = selection
+    .filter((login) => !foundKeys.has(loginKey(login)))
+    .map((login) => known[loginKey(login)] ?? unknownPerson(login));
+  return [...tickedElsewhere, ...found];
 };
 
-const matchesSearch = (row: PersonRow, search: string) => {
-  const needle = search.trim().toLowerCase();
+function PersonItem({
+  person,
+  ticked,
+  onToggle,
+}: {
+  person: ReviewerCandidate;
+  ticked: boolean;
+  onToggle: () => void;
+}) {
   return (
-    needle.length === 0 ||
-    row.login.toLowerCase().includes(needle) ||
-    row.description.toLowerCase().includes(needle)
-  );
-};
-
-function PersonItem({ row, ticked, onToggle }: { row: PersonRow; ticked: boolean; onToggle: () => void }) {
-  return (
-    <li className="person" aria-label={row.login}>
+    <li className="person" aria-label={person.login}>
       <label className="person-label">
-        <input type="checkbox" aria-label={row.login} checked={ticked} onChange={onToggle} />
-        {row.avatarUrl ? (
-          <img className="avatar" src={row.avatarUrl} alt="" width={20} height={20} />
+        <input type="checkbox" aria-label={person.login} checked={ticked} onChange={onToggle} />
+        {person.avatarUrl ? (
+          <img className="avatar" src={person.avatarUrl} alt="" width={20} height={20} />
         ) : (
           <span className="avatar avatar-blank" aria-hidden="true" />
         )}
         <span className="person-text">
-          <span className="person-login">{row.login}</span>
-          {row.description && <span className="person-description">{row.description}</span>}
+          <span className="person-login">{person.login}</span>
+          {person.description && <span className="person-description">{person.description}</span>}
         </span>
-        {row.team && <span className="badge">team</span>}
-        {row.requested && <span className="badge badge-done">requested</span>}
-        {!row.offered && <span className="badge badge-warn">not offered on this PR</span>}
+        {person.team && <span className="badge">team</span>}
+        {person.requested && <span className="badge badge-done">requested</span>}
       </label>
     </li>
   );
 }
 
 export function PeoplePicker({
-  candidates,
+  found,
+  known,
   selection,
+  search,
+  problem,
+  onSearch,
   onToggle,
 }: {
-  candidates: ReviewerCandidate[];
+  found: ReviewerCandidate[];
+  known: KnownPeople;
   selection: string[];
+  search: string;
+  problem: string;
+  onSearch: (search: string) => void;
   onToggle: (login: string) => void;
 }) {
-  const [search, setSearch] = useState("");
-  const rows = rowsFor(candidates, selection).filter((row) => matchesSearch(row, search));
+  const ticked = new Set(selection.map(loginKey));
+  const rows = rowsFor(found, selection, known);
 
   return (
     <section className="people">
@@ -70,22 +84,29 @@ export function PeoplePicker({
         className="search"
         type="search"
         aria-label="Search people"
-        placeholder="Search people"
+        placeholder="Search everyone who can review"
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => onSearch(event.target.value)}
         autoFocus
       />
+      {problem && (
+        <p className="problem" role="alert">
+          {problem}
+        </p>
+      )}
       <ul className="people-list" aria-label="People">
-        {rows.map((row) => (
+        {rows.map((person) => (
           <PersonItem
-            key={row.login}
-            row={row}
-            ticked={selection.some((login) => sameLogin(login, row.login))}
-            onToggle={() => onToggle(row.login)}
+            key={loginKey(person.login)}
+            person={person}
+            ticked={ticked.has(loginKey(person.login))}
+            onToggle={() => onToggle(person.login)}
           />
         ))}
       </ul>
-      {rows.length === 0 && <p className="empty">Nobody matches “{search.trim()}”.</p>}
+      {found.length === 0 && search.trim().length > 0 && (
+        <p className="empty">Nobody matches “{search.trim()}”.</p>
+      )}
     </section>
   );
 }

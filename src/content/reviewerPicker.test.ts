@@ -1,13 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  readReviewerCandidates,
   ReviewerOptionsTimeoutError,
   ReviewerPickerMissingError,
+  ReviewerSearchFailedError,
   requestReviewFrom,
+  searchReviewerCandidates,
 } from "./reviewerPicker";
 import { mountReviewerSidebar, type Candidate } from "./testing/reviewerSidebarFixture";
 
 const toggleSettles = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const timeouts = { timeoutMs: 500, searchTimeoutMs: 200 };
 
 const candidates: Candidate[] = [
   { login: "mona", id: 101 },
@@ -24,7 +27,7 @@ describe("requestReviewFrom", () => {
   it("ticks every member not yet requested and closes the menu so GitHub saves the selection", async () => {
     const fixture = mountReviewerSidebar(document, candidates);
 
-    const outcome = await requestReviewFrom(document, ["mona", "hubot"], { timeoutMs: 500 });
+    const outcome = await requestReviewFrom(document, ["mona", "hubot"], timeouts);
     await toggleSettles();
 
     expect(outcome).toEqual({ added: ["mona", "hubot"], alreadyRequested: [], notFound: [] });
@@ -35,7 +38,7 @@ describe("requestReviewFrom", () => {
   it("matches a member to the picker regardless of letter case", async () => {
     const fixture = mountReviewerSidebar(document, candidates);
 
-    const outcome = await requestReviewFrom(document, ["MONA"], { timeoutMs: 500 });
+    const outcome = await requestReviewFrom(document, ["MONA"], timeouts);
     await toggleSettles();
 
     expect(outcome).toEqual({ added: ["MONA"], alreadyRequested: [], notFound: [] });
@@ -45,17 +48,30 @@ describe("requestReviewFrom", () => {
   it("leaves a reviewer who is already requested ticked and reports them", async () => {
     const fixture = mountReviewerSidebar(document, candidates);
 
-    const outcome = await requestReviewFrom(document, ["octocat", "hubot"], { timeoutMs: 500 });
+    const outcome = await requestReviewFrom(document, ["octocat", "hubot"], timeouts);
     await toggleSettles();
 
     expect(outcome).toEqual({ added: ["hubot"], alreadyRequested: ["octocat"], notFound: [] });
     expect(fixture.savedSelections).toEqual([["hubot", "octocat"]]);
   });
 
-  it("reports a member the repository does not offer as a reviewer and still requests the rest", async () => {
+  it("finds a member outside the default list by typing their login into the menu's filter", async () => {
+    const fixture = mountReviewerSidebar(document, candidates, {
+      foundOnlyBySearch: [{ login: "spacecat", id: 104 }],
+    });
+
+    const outcome = await requestReviewFrom(document, ["spacecat", "mona"], timeouts);
+    await toggleSettles();
+
+    expect(outcome).toEqual({ added: ["spacecat", "mona"], alreadyRequested: [], notFound: [] });
+    expect(fixture.savedSelections).toEqual([["mona", "octocat", "spacecat"]]);
+    expect(fixture.filter.value).toBe("");
+  });
+
+  it("reports a member that even a search of the menu does not find, and still requests the rest", async () => {
     const fixture = mountReviewerSidebar(document, candidates);
 
-    const outcome = await requestReviewFrom(document, ["stranger", "mona"], { timeoutMs: 500 });
+    const outcome = await requestReviewFrom(document, ["stranger", "mona"], timeouts);
     await toggleSettles();
 
     expect(outcome).toEqual({ added: ["mona"], alreadyRequested: [], notFound: ["stranger"] });
@@ -65,7 +81,7 @@ describe("requestReviewFrom", () => {
   it("requests a team listed by its org/team slug", async () => {
     const fixture = mountReviewerSidebar(document, candidates);
 
-    const outcome = await requestReviewFrom(document, ["acme/backend"], { timeoutMs: 500 });
+    const outcome = await requestReviewFrom(document, ["acme/backend"], timeouts);
     await toggleSettles();
 
     expect(outcome).toEqual({ added: ["acme/backend"], alreadyRequested: [], notFound: [] });
@@ -75,7 +91,7 @@ describe("requestReviewFrom", () => {
   it("waits for the picker to load its options after it opens", async () => {
     const fixture = mountReviewerSidebar(document, candidates, { optionsLoadAfterMs: 120 });
 
-    const outcome = await requestReviewFrom(document, ["hubot"], { timeoutMs: 1000 });
+    const outcome = await requestReviewFrom(document, ["hubot"], { timeoutMs: 1000, searchTimeoutMs: 200 });
     await toggleSettles();
 
     expect(outcome).toEqual({ added: ["hubot"], alreadyRequested: [], notFound: [] });
@@ -83,17 +99,15 @@ describe("requestReviewFrom", () => {
   });
 
   it("refuses a page with no reviewer picker, such as a pull request's Files tab", async () => {
-    await expect(requestReviewFrom(document, ["mona"], { timeoutMs: 500 })).rejects.toThrow(
-      ReviewerPickerMissingError,
-    );
+    await expect(requestReviewFrom(document, ["mona"], timeouts)).rejects.toThrow(ReviewerPickerMissingError);
   });
 
   it("closes the menu untouched when its options never load", async () => {
     const fixture = mountReviewerSidebar(document, candidates, { optionsNeverLoad: true });
 
-    await expect(requestReviewFrom(document, ["mona"], { timeoutMs: 150 })).rejects.toThrow(
-      ReviewerOptionsTimeoutError,
-    );
+    await expect(
+      requestReviewFrom(document, ["mona"], { timeoutMs: 150, searchTimeoutMs: 100 }),
+    ).rejects.toThrow(ReviewerOptionsTimeoutError);
     await toggleSettles();
 
     expect(fixture.details.open).toBe(false);
@@ -101,46 +115,102 @@ describe("requestReviewFrom", () => {
   });
 });
 
-describe("readReviewerCandidates", () => {
-  it("lists everyone the picker offers and closes it with the selection unchanged", async () => {
-    const fixture = mountReviewerSidebar(document, [
-      {
-        login: "mona",
-        id: 101,
-        description: "Mona Lisa",
-        avatarUrl: "https://avatars.githubusercontent.com/u/101",
-      },
-      { login: "octocat", id: 103, requested: true },
-      {
-        login: "acme/backend",
-        id: 900,
-        team: true,
-        description: "API owners",
-        avatarUrl: "https://avatars.githubusercontent.com/t/900",
-      },
-    ]);
+describe("searchReviewerCandidates", () => {
+  const answerWith = (body: unknown, status = 200) =>
+    vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
+      );
 
-    const candidates = await readReviewerCandidates(document, { timeoutMs: 500 });
-    await toggleSettles();
+  it("asks GitHub's reviewer search for the query and returns the people and teams it offers", async () => {
+    mountReviewerSidebar(document, []);
+    const fetchReviewers = answerWith({
+      suggestions: [
+        {
+          id: 1,
+          type: "user",
+          selected: false,
+          avatar: "https://avatars.githubusercontent.com/in/1",
+          login: "Copilot",
+          name: {},
+          description: "AI reviewer",
+        },
+      ],
+      users: [
+        {
+          id: 101,
+          type: "user",
+          selected: true,
+          avatar: "https://avatars.githubusercontent.com/u/101",
+          login: "mona",
+          name: "Mona Lisa",
+        },
+        {
+          id: 900,
+          type: "team",
+          selected: false,
+          avatar: "https://avatars.githubusercontent.com/t/900",
+          login: "acme/backend",
+          name: "Backend",
+        },
+      ],
+    });
 
-    expect(candidates).toEqual([
+    const found = await searchReviewerCandidates(document, "mo", fetchReviewers);
+
+    expect(found).toEqual([
+      {
+        login: "Copilot",
+        description: "AI reviewer",
+        avatarUrl: "https://avatars.githubusercontent.com/in/1",
+        team: false,
+        requested: false,
+      },
       {
         login: "mona",
         description: "Mona Lisa",
         avatarUrl: "https://avatars.githubusercontent.com/u/101",
         team: false,
-        requested: false,
+        requested: true,
       },
-      { login: "octocat", description: "", avatarUrl: null, team: false, requested: true },
       {
         login: "acme/backend",
-        description: "API owners",
+        description: "Backend",
         avatarUrl: "https://avatars.githubusercontent.com/t/900",
         team: true,
         requested: false,
       },
     ]);
-    expect(fixture.details.open).toBe(false);
-    expect(fixture.savedSelections).toEqual([["octocat"]]);
+    expect(fetchReviewers).toHaveBeenCalledTimes(1);
+    expect(fetchReviewers).toHaveBeenCalledWith(
+      "http://localhost:3000/acme/widgets/pull/7/review-requests?typeAhead=true&q=mo",
+      { headers: { "X-Requested-With": "XMLHttpRequest" }, credentials: "same-origin" },
+    );
+  });
+
+  it("skips entries it cannot read and keeps the rest", async () => {
+    mountReviewerSidebar(document, []);
+    const fetchReviewers = answerWith({
+      users: [{ login: 42 }, { id: 102, type: "user", selected: false, login: "hubot" }],
+    });
+
+    expect(await searchReviewerCandidates(document, "", fetchReviewers)).toEqual([
+      { login: "hubot", description: "", avatarUrl: null, team: false, requested: false },
+    ]);
+  });
+
+  it("fails with the status when GitHub refuses the search", async () => {
+    mountReviewerSidebar(document, []);
+
+    await expect(searchReviewerCandidates(document, "", answerWith({}, 406))).rejects.toThrow(
+      new ReviewerSearchFailedError(406),
+    );
+  });
+
+  it("refuses a page with no reviewer picker", async () => {
+    await expect(searchReviewerCandidates(document, "", vi.fn<typeof fetch>())).rejects.toThrow(
+      ReviewerPickerMissingError,
+    );
   });
 });

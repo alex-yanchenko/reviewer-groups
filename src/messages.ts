@@ -16,6 +16,13 @@ export const requestReviewMessageSchema = z.object({
 
 export type RequestReviewMessage = z.infer<typeof requestReviewMessageSchema>;
 
+export const listReviewersMessageSchema = z.object({
+  type: z.literal(LIST_REVIEWERS),
+  query: z.string().check(z.maxLength(100)),
+});
+
+export type ListReviewersMessage = z.infer<typeof listReviewersMessageSchema>;
+
 export type RequestReviewReply = { ok: true; outcome: ReviewRequestOutcome } | { ok: false; error: string };
 
 export const describeOutcome = ({ added, alreadyRequested, notFound }: ReviewRequestOutcome): string =>

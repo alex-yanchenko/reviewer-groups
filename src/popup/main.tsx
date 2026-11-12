@@ -27,8 +27,8 @@ const mount = async () => {
   const tab = await readActiveTab();
   const requestReview = (members: string[]): Promise<RequestReviewReply> =>
     tab === null ? Promise.resolve(NO_TAB) : requestReviewInTab(tab.id, members);
-  const listReviewers = (): Promise<ListReviewersReply> =>
-    tab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(tab.id);
+  const listReviewers = (query: string): Promise<ListReviewersReply> =>
+    tab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(tab.id, query);
   createRoot(container).render(
     <App
       store={store}

@@ -9,7 +9,7 @@ import {
 import { EMPTY_DRAFT, type Draft } from "./draft";
 import { GroupCard } from "./GroupCard";
 import { GroupForm, type GroupDraft } from "./GroupForm";
-import { PeoplePicker } from "./PeoplePicker";
+import { PeoplePicker, rememberPeople, type KnownPeople } from "./PeoplePicker";
 
 export type { Draft };
 
@@ -27,7 +27,7 @@ export interface AppProps {
   store: GroupStore;
   drafts: DraftStore;
   requestReview: (members: string[]) => Promise<RequestReviewReply>;
-  listReviewers: () => Promise<ListReviewersReply>;
+  listReviewers: (query: string) => Promise<ListReviewersReply>;
   newId: () => string;
   pullRequest: string | null;
 }
@@ -37,18 +37,23 @@ type TypedEditor = { kind: "closed" } | { kind: "new" } | { kind: "edit"; group:
 type Reviewers =
   | { state: "absent" }
   | { state: "loading" }
-  | { state: "ready"; candidates: ReviewerCandidate[] }
+  | { state: "ready"; candidates: ReviewerCandidate[]; problem: string }
   | { state: "failed"; error: string };
 
 const SELECTION_BUSY = "selection";
+
+const SEARCH_DEBOUNCE_MS = 250;
 
 const toggleLogin = (selection: string[], login: string): string[] =>
   selection.some((ticked) => ticked.toLowerCase() === login.toLowerCase())
     ? selection.filter((ticked) => ticked.toLowerCase() !== login.toLowerCase())
     : [...selection, login];
 
-const reviewersFromReply = (reply: ListReviewersReply): Reviewers =>
-  reply.ok ? { state: "ready", candidates: reply.candidates } : { state: "failed", error: reply.error };
+const reviewersAfterReply = (previous: Reviewers, reply: ListReviewersReply): Reviewers => {
+  if (reply.ok) return { state: "ready", candidates: reply.candidates, problem: "" };
+  if (previous.state === "ready") return { ...previous, problem: reply.error };
+  return { state: "failed", error: reply.error };
+};
 
 function SelectionBar({
   draft,
@@ -155,6 +160,8 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
   const [busy, setBusy] = useState<string | null>(null);
   const [reviewers, setReviewers] = useState<Reviewers>({ state: pullRequest ? "loading" : "absent" });
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [search, setSearch] = useState("");
+  const [known, setKnown] = useState<KnownPeople>({});
 
   useEffect(() => {
     store.load().then(setGroups, (error: unknown) => {
@@ -163,8 +170,27 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
       );
     });
     void drafts.load().then(setDraft);
-    if (pullRequest) void listReviewers().then((reply) => setReviewers(reviewersFromReply(reply)));
-  }, [store, drafts, listReviewers, pullRequest]);
+  }, [store, drafts]);
+
+  useEffect(() => {
+    if (!pullRequest) return;
+    let stillWanted = true;
+    const query = search.trim();
+    const timer = setTimeout(
+      () => {
+        void listReviewers(query).then((reply) => {
+          if (!stillWanted) return;
+          setReviewers((previous) => reviewersAfterReply(previous, reply));
+          if (reply.ok) setKnown((previous) => rememberPeople(previous, reply.candidates));
+        });
+      },
+      query === "" ? 0 : SEARCH_DEBOUNCE_MS,
+    );
+    return () => {
+      stillWanted = false;
+      clearTimeout(timer);
+    };
+  }, [listReviewers, pullRequest, search]);
 
   const pickerReady = reviewers.state === "ready";
   const editingGroup =
@@ -300,8 +326,12 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
       {reviewers.state === "ready" && (
         <>
           <PeoplePicker
-            candidates={reviewers.candidates}
+            found={reviewers.candidates}
+            known={known}
             selection={draft.selection}
+            search={search}
+            problem={reviewers.problem}
+            onSearch={setSearch}
             onToggle={(login) => updateDraft({ ...draft, selection: toggleLogin(draft.selection, login) })}
           />
           <SelectionBar

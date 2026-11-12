@@ -3,6 +3,7 @@ import { memberSchema } from "../groups/group";
 import {
   LIST_REVIEWERS,
   REQUEST_REVIEW,
+  type ListReviewersMessage,
   type ListReviewersReply,
   type RequestReviewMessage,
   type RequestReviewReply,
@@ -99,5 +100,7 @@ export const requestReviewInTab = (tabId: number, members: string[]): Promise<Re
   return sendToPicker(tabId, message).then(parseReply, tabUnreachable);
 };
 
-export const listReviewersInTab = (tabId: number): Promise<ListReviewersReply> =>
-  sendToPicker(tabId, { type: LIST_REVIEWERS }).then(parseCandidatesReply, tabUnreachable);
+export const listReviewersInTab = (tabId: number, query: string): Promise<ListReviewersReply> => {
+  const message: ListReviewersMessage = { type: LIST_REVIEWERS, query };
+  return sendToPicker(tabId, message).then(parseCandidatesReply, tabUnreachable);
+};

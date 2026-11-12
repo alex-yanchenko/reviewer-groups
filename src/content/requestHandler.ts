@@ -7,16 +7,25 @@ import {
   type RequestReviewReply,
 } from "../messages";
 import {
-  ReviewerOptionsTimeoutError,
-  ReviewerPickerMissingError,
-  ReviewerSearchFailedError,
+  GitHubAnswerError,
+  GitHubAnswerUnreadableError,
+  PullRequestPageMissingError,
+  RequestInProgressError,
+  ReviewerFormMissingError,
   requestReviewFrom,
   searchReviewerCandidates,
-} from "./reviewerPicker";
-
-export const PICKER_TIMEOUTS = { timeoutMs: 8000, searchTimeoutMs: 4000 };
+  type GitHubPage,
+} from "./githubReviewers";
 
 const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([REQUEST_REVIEW, LIST_REVIEWERS]);
+
+const EXPECTED_FAILURES = [
+  GitHubAnswerError,
+  GitHubAnswerUnreadableError,
+  PullRequestPageMissingError,
+  RequestInProgressError,
+  ReviewerFormMissingError,
+];
 
 export const isExtensionMessage = (message: unknown): message is { type: string } =>
   typeof message === "object" &&
@@ -24,49 +33,41 @@ export const isExtensionMessage = (message: unknown): message is { type: string 
   "type" in message &&
   EXTENSION_MESSAGE_TYPES.has(message.type);
 
-const replyWithPickerFailure = (error: unknown): { ok: false; error: string } => {
-  if (
-    error instanceof ReviewerPickerMissingError ||
-    error instanceof ReviewerOptionsTimeoutError ||
-    error instanceof ReviewerSearchFailedError
-  ) {
-    return { ok: false, error: error.message };
+const replyWithExpectedFailure = (error: unknown): { ok: false; error: string } => {
+  if (EXPECTED_FAILURES.some((failure) => error instanceof failure)) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   throw error;
 };
 
-const requestReviewReply = (doc: Document, members: readonly string[]): Promise<RequestReviewReply> =>
-  requestReviewFrom(doc, members, PICKER_TIMEOUTS).then(
-    (outcome) => ({ ok: true, outcome }),
-    replyWithPickerFailure,
-  );
-
-const listReviewersReply = (doc: Document, query: string): Promise<ListReviewersReply> =>
-  searchReviewerCandidates(doc, query, (input, init) => fetch(input, init)).then(
-    (candidates) => ({ ok: true, candidates }),
-    replyWithPickerFailure,
-  );
-
-const handleListReviewers = (doc: Document, message: unknown): Promise<ListReviewersReply> => {
+const handleListReviewers = (page: GitHubPage, message: unknown): Promise<ListReviewersReply> => {
   const parsed = listReviewersMessageSchema.safeParse(message);
-  if (!parsed.success)
+  if (!parsed.success) {
     return Promise.resolve({ ok: false, error: "The request did not carry a valid search." });
-  return listReviewersReply(doc, parsed.data.query);
+  }
+  return searchReviewerCandidates(page, parsed.data.query).then(
+    (candidates) => ({ ok: true, candidates }),
+    replyWithExpectedFailure,
+  );
 };
 
-const handleRequestReview = (doc: Document, message: unknown): Promise<RequestReviewReply> => {
+const handleRequestReview = (page: GitHubPage, message: unknown): Promise<RequestReviewReply> => {
   const parsed = requestReviewMessageSchema.safeParse(message);
-  if (!parsed.success)
+  if (!parsed.success) {
     return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
-  return requestReviewReply(doc, parsed.data.members);
+  }
+  return requestReviewFrom(page, parsed.data.members).then(
+    (outcome) => ({ ok: true, outcome }),
+    replyWithExpectedFailure,
+  );
 };
 
 export const handleExtensionMessage = async (
-  doc: Document,
+  page: GitHubPage,
   message: unknown,
 ): Promise<RequestReviewReply | ListReviewersReply | undefined> => {
   if (!isExtensionMessage(message)) return undefined;
   return message.type === LIST_REVIEWERS
-    ? handleListReviewers(doc, message)
-    : handleRequestReview(doc, message);
+    ? handleListReviewers(page, message)
+    : handleRequestReview(page, message);
 };

@@ -15,6 +15,7 @@ const unknownPerson = (login: string): ReviewerCandidate => ({
   avatarUrl: null,
   team: login.includes("/"),
   requested: false,
+  available: true,
 });
 
 const rowsFor = (
@@ -41,7 +42,13 @@ function PersonItem({
   return (
     <li className="person" aria-label={person.login}>
       <label className="person-label">
-        <input type="checkbox" aria-label={person.login} checked={ticked} onChange={onToggle} />
+        <input
+          type="checkbox"
+          aria-label={person.login}
+          checked={ticked}
+          disabled={!person.available && !ticked}
+          onChange={onToggle}
+        />
         {person.avatarUrl ? (
           <img className="avatar" src={person.avatarUrl} alt="" width={20} height={20} />
         ) : (
@@ -53,6 +60,7 @@ function PersonItem({
         </span>
         {person.team && <span className="badge">team</span>}
         {person.requested && <span className="badge badge-done">requested</span>}
+        {!person.available && <span className="badge badge-warn">unavailable</span>}
       </label>
     </li>
   );

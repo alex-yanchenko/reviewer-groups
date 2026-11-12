@@ -1,13 +1,13 @@
 import { createRoot } from "react-dom/client";
-import { loadGroups, saveGroups, type GroupsArea } from "../groups/storage";
+import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
 import type { ListReviewersReply, RequestReviewReply } from "../messages";
 import { listReviewersInTab, readActiveTab, requestReviewInTab } from "./activeTab";
 import { App, type DraftStore, type GroupStore } from "./App";
 import { loadDraft, saveDraft } from "./draft";
 import "./popup.css";
 
-const syncArea: GroupsArea = chrome.storage.sync;
-const sessionArea: GroupsArea = chrome.storage.session;
+const syncArea: StorageArea = chrome.storage.sync;
+const sessionArea: StorageArea = chrome.storage.session;
 
 const store: GroupStore = {
   load: () => loadGroups(syncArea),

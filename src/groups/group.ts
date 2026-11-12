@@ -1,7 +1,7 @@
 import * as z from "zod/mini";
 
 const LOGIN_PATTERN = "[a-z\\d][a-z\\d-]{0,38}";
-const MEMBER_PATTERN = new RegExp(`^${LOGIN_PATTERN}(?:_[a-z\\d]+|/[a-z\\d][a-z\\d_-]*)?$`, "i");
+const MEMBER_PATTERN = new RegExp(`^${LOGIN_PATTERN}(?:_[a-z\\d]+|\\[bot\\]|/[a-z\\d][a-z\\d_-]*)?$`, "i");
 
 export const memberSchema = z.string().check(z.regex(MEMBER_PATTERN));
 
@@ -13,15 +13,7 @@ export const groupSchema = z.object({
 
 export type Group = z.infer<typeof groupSchema>;
 
-export class StoredGroupsInvalidError extends Error {
-  override readonly name = "StoredGroupsInvalidError";
-}
-
-export const parseStoredGroups = (raw: unknown): Group[] => {
-  if (raw === undefined) return [];
-  const result = z.array(groupSchema).safeParse(raw);
-  if (!result.success) {
-    throw new StoredGroupsInvalidError(z.prettifyError(result.error), { cause: result.error });
-  }
-  return result.data;
+export const readStoredGroup = (raw: unknown): Group | undefined => {
+  const result = groupSchema.safeParse(raw);
+  return result.success ? result.data : undefined;
 };

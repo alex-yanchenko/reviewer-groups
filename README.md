@@ -1,15 +1,20 @@
 # Reviewer Groups
 
-A Chrome extension for requesting GitHub pull request reviews from several people at once. Open it on a pull request, tick people, and request them; save a set you use often as a group, and next time it is two clicks: the toolbar icon, then the group.
+A Chrome extension for requesting GitHub pull request reviews from several people at once. Open it on a pull request, tick people, and request them. Save a set you use often as a group, and next time it is two clicks: the toolbar icon, then the group.
+
+No token, no setup: it works with the GitHub session you are already signed in with.
+
+![Ticking reviewers in the popup](docs/screenshots/pick.png)
 
 ## How it works
 
-- **Who you can pick.** On a pull request, the popup asks GitHub's own reviewer search, `GET <pull request>/review-requests?typeAhead=true&q=<search>` with `X-Requested-With: XMLHttpRequest`, the same JSON endpoint the Reviewers menu uses. With an empty search it returns GitHub's suggestions; typing in the popup's search box queries everyone GitHub would let you request, teams included. The request runs inside the tab with your logged-in session, so no token is needed.
-- **Requesting.** The popup injects `picker.js` into the tab. It opens GitHub's Reviewers menu on the Conversation tab, ticks each person not already requested, and closes the menu, which is how GitHub saves a reviewer selection. Someone outside the menu's default list is found by typing their login into the menu's filter first. The page's Reviewers box updates the normal way.
-- **The menu needs a focus event to load.** GitHub fetches the menu's list when its filter field receives focus. While the extension popup is open, Chrome withholds focus events from the page, so `picker.js` dispatches that `focus` event itself after opening the menu.
-- **Storage.** Groups live in `chrome.storage.sync` (a name and a list of logins or `org/team` slugs). Ticks in progress live in `chrome.storage.session`, so closing the popup by clicking the page loses nothing; they clear when Chrome quits.
+The extension talks to the same two github.com endpoints GitHub's own Reviewers box uses, from inside the pull request tab, with your signed-in session.
+
+- **Listing people.** `GET <pull request>/review-requests?typeAhead=true&q=<search>` with `X-Requested-With: XMLHttpRequest` answers JSON: each person or team's id, login, name, avatar, whether they are already requested (`selected`) and whether they can review (`disabled`). An empty search returns GitHub's suggestions plus everyone currently requested; a search reaches anyone GitHub would let you request. This works on every tab of a pull request.
+- **Requesting.** The Reviewers box is a form that sets the whole reviewer list at once: `POST <pull request>/review-requests` with the form's `authenticity_token` and hidden fields plus one `reviewer_user_ids[]` or `reviewer_team_ids[]` per reviewer. For each member the extension first looks up their exact login, which sorts out who is already requested, unavailable or not offered, without sending anything. It then sends the form with everyone GitHub currently lists as requested plus the new people. The current reviewers always come from the JSON answer, never from the page's form, because the page's copy goes stale after any change made outside it.
+- **After requesting.** GitHub answers with fresh HTML for the Reviewers box, which the extension swaps into the page, and the extension asks the JSON endpoint again to confirm who is now requested. Anyone not confirmed is reported as such.
+- **Storage.** Each group lives under its own key in `chrome.storage.sync` (a name and a list of logins or `org/team` slugs), with a separate key for their order, so no single item approaches Chrome's per-item limit. Ticks in progress live in `chrome.storage.session`, so closing the popup by clicking the page loses nothing; they clear when Chrome quits.
 - **Permissions.** `storage`, `activeTab` and `scripting`. With `activeTab` the extension reaches a tab only after you click its icon, and only that tab, so it has no standing access to github.com or any other site.
-- The popup reports who was requested, who already was, and who GitHub does not offer as a reviewer on that pull request (the author, or someone without access to the repository).
 
 ## Develop
 
@@ -19,11 +24,18 @@ pnpm build          # writes the loadable extension to dist/
 pnpm dev            # rebuilds on change
 pnpm check          # prettier, eslint, tsc, vitest
 pnpm package        # dist/ zipped for the Chrome Web Store
+pnpm screenshots    # regenerates docs/screenshots with invented people (needs Google Chrome)
 ```
 
 Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick the `dist/` folder.
 
 ## Limits
 
-- It depends on two GitHub internals: the reviewer search endpoint above, and the sidebar markup (`form[action$="/review-requests"]`, its `input.js-filterable-field`, and `label[role="menuitemcheckbox"]` options). Both live in `src/content/reviewerPicker.ts`; `src/content/testing/reviewerSidebarFixture.ts` is the markup and behaviour the tests assume.
-- It works on a pull request's Conversation tab, where the Reviewers menu lives. On the Files tab it says so.
+- Both endpoints are GitHub internals, not a public API, and can change without notice. Everything that touches them is in `src/content/githubReviewers.ts`; `src/content/testing/fakeGitHub.ts` is the behaviour the tests assume.
+- Requesting needs the pull request's Conversation tab, where the Reviewers form and its token live. Listing and building groups work on any tab of a pull request.
+
+## Screenshots
+
+|                                                          |                                                                   |
+| -------------------------------------------------------- | ----------------------------------------------------------------- |
+| ![Requesting a saved group](docs/screenshots/groups.png) | ![Searching everyone who can review](docs/screenshots/search.png) |

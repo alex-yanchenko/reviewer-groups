@@ -1,7 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Group } from "../groups/group";
-import type { ListReviewersReply, RequestReviewReply, ReviewerCandidate } from "../messages";
+import type {
+  ListReviewersReply,
+  RequestReviewReply,
+  ReviewerCandidate,
+  ReviewRequestOutcome,
+} from "../messages";
 import { App, type Draft, type DraftStore, type GroupStore } from "./App";
 
 const backend: Group = { id: "g1", name: "Backend", members: ["mona", "hubot"] };
@@ -12,6 +17,16 @@ const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): R
   avatarUrl: null,
   team: false,
   requested: false,
+  available: true,
+  ...overrides,
+});
+
+const outcome = (overrides: Partial<ReviewRequestOutcome>): ReviewRequestOutcome => ({
+  added: [],
+  alreadyRequested: [],
+  unavailable: [],
+  notFound: [],
+  unconfirmed: [],
   ...overrides,
 });
 
@@ -26,6 +41,8 @@ const emptyDraft: Draft = { selection: [], editingGroupId: null };
 
 interface RenderOptions {
   groups?: Group[];
+  unreadable?: number;
+  saveFailure?: Error;
   pullRequest?: string | null;
   candidates?: ListReviewersReply;
   searches?: Record<string, ReviewerCandidate[]>;
@@ -36,6 +53,8 @@ interface RenderOptions {
 
 const renderApp = ({
   groups = [],
+  unreadable = 0,
+  saveFailure,
   pullRequest = "acme/widgets#7",
   candidates = { ok: true, candidates: reviewers },
   searches = {},
@@ -43,9 +62,12 @@ const renderApp = ({
   draftLoad = Promise.resolve(draft),
   requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
 }: RenderOptions = {}) => {
+  const save = vi.fn<GroupStore["save"]>();
+  if (saveFailure === undefined) save.mockResolvedValue(undefined);
+  else save.mockRejectedValueOnce(saveFailure);
   const store = {
-    load: vi.fn<GroupStore["load"]>().mockResolvedValueOnce(groups),
-    save: vi.fn<GroupStore["save"]>().mockResolvedValue(undefined),
+    load: vi.fn<GroupStore["load"]>().mockResolvedValueOnce({ groups, unreadable }),
+    save,
   } satisfies GroupStore;
   const drafts = {
     load: vi.fn<DraftStore["load"]>().mockReturnValueOnce(draftLoad),
@@ -145,7 +167,7 @@ describe("App on a pull request", () => {
   it("requests review from the ticked people and clears the ticks", async () => {
     const requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>().mockResolvedValueOnce({
       ok: true,
-      outcome: { added: ["mona", "hubot"], alreadyRequested: [], notFound: [] },
+      outcome: outcome({ added: ["mona", "hubot"] }),
     });
     const { saveDraft } = renderApp({ requestReview });
     await tick("mona");
@@ -277,10 +299,43 @@ describe("App on a pull request", () => {
     expect(isTicked("mona")).toBe(true);
   });
 
+  it("locks every request button until the running request finishes", async () => {
+    let finish: (reply: RequestReviewReply) => void = () => undefined;
+    const requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>().mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const frontend: Group = { id: "g2", name: "Frontend", members: ["octocat"] };
+    renderApp({ groups: [backend, frontend], requestReview });
+    await tick("hubot");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Request Backend" }));
+
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Request Frontend" }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Request 1" }).disabled).toBe(true);
+    await act(async () => {
+      finish({ ok: true, outcome: outcome({ added: ["mona", "hubot"] }) });
+      await Promise.resolve();
+    });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Request Frontend" }).disabled).toBe(false);
+  });
+
+  it("marks people GitHub says cannot review and does not let them be ticked", async () => {
+    renderApp({ candidates: { ok: true, candidates: [candidate("away-person", { available: false })] } });
+
+    const box = await screen.findByRole<HTMLInputElement>("checkbox", { name: "away-person" });
+
+    expect(box.disabled).toBe(true);
+    expect(
+      within(screen.getByRole("listitem", { name: "away-person" })).getByText("unavailable"),
+    ).toBeTruthy();
+  });
+
   it("requests review from a saved group in one click", async () => {
     const requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>().mockResolvedValueOnce({
       ok: true,
-      outcome: { added: ["mona"], alreadyRequested: ["hubot"], notFound: [] },
+      outcome: outcome({ added: ["mona"], alreadyRequested: ["hubot"] }),
     });
     renderApp({ groups: [backend], requestReview });
 
@@ -379,6 +434,26 @@ describe("App away from a pull request", () => {
     expect(await screen.findByText("mona, octocat")).toBeTruthy();
     expect(save).toHaveBeenCalledTimes(1);
     expect(save).toHaveBeenCalledWith([{ id: "g1", name: "Backend", members: ["mona", "octocat"] }]);
+  });
+
+  it("keeps the readable groups and says how many could not be read", async () => {
+    renderApp({ groups: [backend], unreadable: 1, pullRequest: null });
+
+    expect(await screen.findByRole("listitem", { name: "Backend" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe("1 saved group could not be read and was left out.");
+  });
+
+  it("puts the list back and says why when Chrome refuses to save it", async () => {
+    renderApp({ groups: [backend], pullRequest: null, saveFailure: new Error("QUOTA_BYTES quota exceeded") });
+    fireEvent.click(await screen.findByRole("button", { name: "New group" }));
+
+    fillGroupForm("Frontend", "octocat");
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Groups could not be saved: QUOTA_BYTES quota exceeded",
+    );
+    expect(screen.queryByRole("listitem", { name: "Frontend" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "Backend" })).toBeTruthy();
   });
 
   it("shows why stored groups could not be read", async () => {

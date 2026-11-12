@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GroupsArea } from "../groups/storage";
-import { DRAFT_KEY, EMPTY_DRAFT, loadDraft, saveDraft } from "./draft";
+import { DRAFT_KEY, EMPTY_DRAFT, loadDraft, saveDraft, type DraftArea } from "./draft";
 
 const buildArea = (stored: Record<string, unknown>) => {
-  const get = vi.fn<GroupsArea["get"]>().mockResolvedValueOnce(stored);
-  const set = vi.fn<GroupsArea["set"]>().mockResolvedValueOnce(undefined);
-  return { area: { get, set } satisfies GroupsArea, get, set };
+  const get = vi.fn<DraftArea["get"]>().mockResolvedValueOnce(stored);
+  const set = vi.fn<DraftArea["set"]>().mockResolvedValueOnce(undefined);
+  return { area: { get, set } satisfies DraftArea, get, set };
 };
 
 describe("loadDraft", () => {

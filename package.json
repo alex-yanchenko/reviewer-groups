@@ -19,7 +19,6 @@
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
   },
   "dependencies": {
-    "p-wait-for": "^7.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7"
@@ -35,6 +34,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.14.0",
     "jsdom": "^31.0.0",
+    "p-wait-for": "^7.0.0",
     "prettier": "^3.9.10",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.1",

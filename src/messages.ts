@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import type { ReviewerCandidate, ReviewRequestOutcome } from "./content/reviewerPicker";
+import type { ReviewerCandidate, ReviewRequestOutcome } from "./content/githubReviewers";
 import { memberSchema } from "./groups/group";
 
 export type { ReviewerCandidate, ReviewRequestOutcome };
@@ -25,11 +25,16 @@ export type ListReviewersMessage = z.infer<typeof listReviewersMessageSchema>;
 
 export type RequestReviewReply = { ok: true; outcome: ReviewRequestOutcome } | { ok: false; error: string };
 
-export const describeOutcome = ({ added, alreadyRequested, notFound }: ReviewRequestOutcome): string =>
+const listSentence = (prefix: string, logins: string[], suffix = "") =>
+  logins.length > 0 ? `${prefix}${logins.join(", ")}.${suffix}` : "";
+
+export const describeOutcome = (outcome: ReviewRequestOutcome): string =>
   [
-    added.length > 0 ? `Requested ${added.join(", ")}.` : "Nobody new to request.",
-    alreadyRequested.length > 0 ? `Already requested: ${alreadyRequested.join(", ")}.` : "",
-    notFound.length > 0 ? `Not a reviewer option on this PR: ${notFound.join(", ")}.` : "",
+    outcome.added.length > 0 ? listSentence("Requested ", outcome.added) : "Nobody new to request.",
+    listSentence("Already requested: ", outcome.alreadyRequested),
+    listSentence("Not available to review: ", outcome.unavailable),
+    listSentence("Not a reviewer option on this PR: ", outcome.notFound),
+    listSentence("GitHub did not confirm: ", outcome.unconfirmed, " Check the pull request."),
   ]
     .filter((sentence) => sentence.length > 0)
     .join(" ");

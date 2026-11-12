@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Group } from "../groups/group";
+import type { StoredGroups } from "../groups/storage";
 import {
   describeReply,
   type ListReviewersReply,
@@ -14,7 +15,7 @@ import { PeoplePicker, rememberPeople, type KnownPeople } from "./PeoplePicker";
 export type { Draft };
 
 export interface GroupStore {
-  load(): Promise<Group[]>;
+  load(): Promise<StoredGroups>;
   save(groups: Group[]): Promise<void>;
 }
 
@@ -49,6 +50,15 @@ const toggleLogin = (selection: string[], login: string): string[] =>
     ? selection.filter((ticked) => ticked.toLowerCase() !== login.toLowerCase())
     : [...selection, login];
 
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const describeUnreadableGroups = (count: number) => {
+  if (count === 0) return "";
+  return count === 1
+    ? "1 saved group could not be read and was left out."
+    : `${count} saved groups could not be read and were left out.`;
+};
+
 const reviewersAfterReply = (previous: Reviewers, reply: ListReviewersReply): Reviewers => {
   if (reply.ok) return { state: "ready", candidates: reply.candidates, problem: "" };
   if (previous.state === "ready") return { ...previous, problem: reply.error };
@@ -59,6 +69,7 @@ function SelectionBar({
   draft,
   editingGroup,
   busy,
+  locked,
   onRequest,
   onSaveAsGroup,
   onSaveChanges,
@@ -67,6 +78,7 @@ function SelectionBar({
   draft: Draft;
   editingGroup: Group | undefined;
   busy: boolean;
+  locked: boolean;
   onRequest: () => void;
   onSaveAsGroup: (name: string) => string;
   onSaveChanges: () => string;
@@ -144,7 +156,7 @@ function SelectionBar({
         <button type="button" className="btn" onClick={() => setNaming(true)}>
           Save as group
         </button>
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={onRequest}>
+        <button type="button" className="btn btn-primary" disabled={locked} onClick={onRequest}>
           {busy ? "Requesting…" : `Request ${count}`}
         </button>
       </div>
@@ -158,17 +170,20 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
   const [typedEditor, setTypedEditor] = useState<TypedEditor>({ kind: "closed" });
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [groupsNotice, setGroupsNotice] = useState("");
   const [reviewers, setReviewers] = useState<Reviewers>({ state: pullRequest ? "loading" : "absent" });
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [search, setSearch] = useState("");
   const [known, setKnown] = useState<KnownPeople>({});
 
   useEffect(() => {
-    store.load().then(setGroups, (error: unknown) => {
-      setLoadProblem(
-        `Saved groups could not be read: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
+    store.load().then(
+      ({ groups: readable, unreadable }) => {
+        setGroups(readable);
+        setGroupsNotice(describeUnreadableGroups(unreadable));
+      },
+      (error: unknown) => setLoadProblem(`Saved groups could not be read: ${messageOf(error)}`),
+    );
     void drafts.load().then((saved) => setDraft((current) => (current === EMPTY_DRAFT ? saved : current)));
   }, [store, drafts]);
 
@@ -202,8 +217,13 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
   };
 
   const persist = (next: Group[]) => {
+    const previous = groups;
     setGroups(next);
-    void store.save(next);
+    setGroupsNotice("");
+    void store.save(next).catch((error: unknown) => {
+      setGroups(previous);
+      setGroupsNotice(`Groups could not be saved: ${messageOf(error)}`);
+    });
   };
 
   const requestFrom = async (busyKey: string, members: string[]): Promise<RequestReviewReply> => {
@@ -280,6 +300,12 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
         )}
       </header>
 
+      {groupsNotice && (
+        <p className="problem" role="alert">
+          {groupsNotice}
+        </p>
+      )}
+
       {groups !== null && groups.length > 0 && (
         <ul className="cards" aria-label="Groups">
           {groups.map((group) =>
@@ -297,6 +323,7 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
                 group={group}
                 canRequest={pullRequest !== null}
                 busy={busy === group.id}
+                locked={busy !== null}
                 editing={editingGroup?.id === group.id}
                 onRequest={() => void requestFrom(group.id, group.members)}
                 onEdit={() => startEdit(group)}
@@ -340,6 +367,7 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
             draft={draft}
             editingGroup={editingGroup}
             busy={busy === SELECTION_BUSY}
+            locked={busy !== null}
             onRequest={() => void requestSelection()}
             onSaveAsGroup={saveAsGroup}
             onSaveChanges={saveChanges}

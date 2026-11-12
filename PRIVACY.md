@@ -13,7 +13,7 @@ When you click the extension's icon on a GitHub pull request, it reads the list 
 
 ## What it sends
 
-- To GitHub: the review requests you ask for, made through GitHub's own Reviewers menu in your tab, exactly as if you had ticked the names yourself.
+- To GitHub: the review requests you ask for, sent from your tab to github.com the same way GitHub's own Reviewers box sends them, with the session you are signed in with.
 - To anyone else: nothing. The extension has no server, no analytics, no tracking and no third-party code. It never asks for or stores a GitHub token or password.
 
 The popup shows reviewers' avatars, which your browser loads from GitHub's avatar host (`avatars.githubusercontent.com`).

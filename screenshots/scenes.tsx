@@ -48,6 +48,7 @@ const toCandidate = (person: Person): ReviewerCandidate => ({
   login: person.login,
   description: person.name,
   avatarUrl: avatarFor(person),
+  available: true,
   team: person.team ?? false,
   requested: person.requested ?? false,
 });
@@ -69,7 +70,10 @@ const groups: Group[] = [
 ];
 
 const requestReview = (members: string[]): Promise<RequestReviewReply> =>
-  Promise.resolve({ ok: true, outcome: { added: members, alreadyRequested: [], notFound: [] } });
+  Promise.resolve({
+    ok: true,
+    outcome: { added: members, alreadyRequested: [], unavailable: [], notFound: [], unconfirmed: [] },
+  });
 
 interface Scene {
   title: string;
@@ -184,7 +188,10 @@ const renderScene = async (root: HTMLElement, scene: Scene) => {
       </section>
       <section className="window">
         <App
-          store={{ load: () => Promise.resolve(scene.groups), save: () => Promise.resolve() }}
+          store={{
+            load: () => Promise.resolve({ groups: scene.groups, unreadable: 0 }),
+            save: () => Promise.resolve(),
+          }}
           drafts={{ load: () => Promise.resolve(scene.draft), save: () => Promise.resolve() }}
           requestReview={requestReview}
           listReviewers={listReviewers}

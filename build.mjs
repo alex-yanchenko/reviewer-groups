@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { context } from "esbuild";
@@ -13,7 +13,9 @@ const copyStaticFiles = async () => {
   await mkdir(dist, { recursive: true });
   await cp(resolve(root, "manifest.json"), resolve(dist, "manifest.json"));
   await cp(resolve(root, "src/popup/popup.html"), resolve(dist, "popup.html"));
-  await cp(resolve(root, "icons"), resolve(dist, "icons"), { recursive: true });
+  await mkdir(resolve(dist, "icons"), { recursive: true });
+  const icons = (await readdir(resolve(root, "icons"))).filter((file) => file.endsWith(".png"));
+  await Promise.all(icons.map((file) => cp(resolve(root, "icons", file), resolve(dist, "icons", file))));
 };
 
 const copyStaticFilesAfterBuild = {
@@ -36,7 +38,7 @@ const ctx = await context({
   bundle: true,
   format: "iife",
   platform: "browser",
-  target: ["chrome120"],
+  target: ["chrome126"],
   jsx: "automatic",
   minify: !watch,
   define: { "process.env.NODE_ENV": '"production"' },

@@ -4,6 +4,7 @@ export function GroupCard({
   group,
   canRequest,
   busy,
+  locked,
   editing,
   onRequest,
   onEdit,
@@ -12,6 +13,7 @@ export function GroupCard({
   group: Group;
   canRequest: boolean;
   busy: boolean;
+  locked: boolean;
   editing: boolean;
   onRequest: () => void;
   onEdit: () => void;
@@ -28,7 +30,7 @@ export function GroupCard({
           type="button"
           className="btn btn-primary"
           aria-label={`Request ${group.name}`}
-          disabled={!canRequest || busy}
+          disabled={!canRequest || locked}
           onClick={onRequest}
         >
           {busy ? "Requesting…" : "Request"}

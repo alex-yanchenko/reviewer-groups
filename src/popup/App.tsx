@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Group } from "../groups/group";
 import type { StoredGroups } from "../groups/storage";
 import {
@@ -7,10 +7,20 @@ import {
   type RequestReviewReply,
   type ReviewerCandidate,
 } from "../messages";
+import {
+  EMPTY_DIRECTORY,
+  isGone,
+  markGone,
+  rememberedPeople,
+  rememberPeople,
+  type Directory,
+} from "./directory";
 import { EMPTY_DRAFT, type Draft } from "./draft";
 import { GroupCard } from "./GroupCard";
 import { GroupForm, type GroupDraft } from "./GroupForm";
-import { PeoplePicker, rememberPeople, type KnownPeople } from "./PeoplePicker";
+import { PeoplePicker } from "./PeoplePicker";
+import { rankSearchResults } from "./searchResults";
+import { SelectionBar } from "./SelectionBar";
 
 export type { Draft };
 
@@ -24,9 +34,15 @@ export interface DraftStore {
   save(draft: Draft): Promise<void>;
 }
 
+export interface DirectoryStore {
+  load(): Promise<Directory>;
+  save(directory: Directory): Promise<void>;
+}
+
 export interface AppProps {
   store: GroupStore;
   drafts: DraftStore;
+  directory: DirectoryStore;
   requestReview: (members: string[]) => Promise<RequestReviewReply>;
   listReviewers: (query: string) => Promise<ListReviewersReply>;
   newId: () => string;
@@ -65,130 +81,68 @@ const reviewersAfterReply = (previous: Reviewers, reply: ListReviewersReply): Re
   return { state: "failed", error: reply.error };
 };
 
-function SelectionBar({
-  draft,
-  editingGroup,
-  busy,
-  locked,
-  onRequest,
-  onSaveAsGroup,
-  onSaveChanges,
-  onCancelEdit,
-}: {
-  draft: Draft;
-  editingGroup: Group | undefined;
-  busy: boolean;
-  locked: boolean;
-  onRequest: () => void;
-  onSaveAsGroup: (name: string) => string;
-  onSaveChanges: () => string;
-  onCancelEdit: () => void;
-}) {
-  const [naming, setNaming] = useState(false);
-  const [name, setName] = useState("");
-  const [problem, setProblem] = useState("");
-  const count = draft.selection.length;
+const matchesSearch = (person: ReviewerCandidate, search: string) => {
+  const needle = search.trim().toLowerCase();
+  return person.login.toLowerCase().includes(needle) || person.description.toLowerCase().includes(needle);
+};
 
-  const submitName = (event: FormEvent) => {
-    event.preventDefault();
-    const outcome = onSaveAsGroup(name);
-    setProblem(outcome);
-    if (outcome === "") {
-      setNaming(false);
-      setName("");
-    }
-  };
-
-  const problemLine = problem && (
-    <p className="problem" role="alert">
-      {problem}
-    </p>
-  );
-
-  if (editingGroup !== undefined) {
-    return (
-      <div className="selection-bar">
-        <span className="selection-count">Editing {editingGroup.name}</span>
-        {problemLine}
-        <div className="actions">
-          <button type="button" className="btn" onClick={onCancelEdit}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={() => setProblem(onSaveChanges())}>
-            Save changes
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (naming) {
-    return (
-      <form className="selection-bar" onSubmit={submitName}>
-        <label className="field">
-          <span>Group name</span>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Backend"
-            autoFocus
-          />
-        </label>
-        {problemLine}
-        <div className="actions">
-          <button type="button" className="btn" onClick={() => setNaming(false)}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-primary">
-            Save group
-          </button>
-        </div>
-      </form>
-    );
-  }
-
-  if (count === 0) return null;
-
-  return (
-    <div className="selection-bar selection-bar-row">
-      <span className="selection-count">{count} selected</span>
-      <div className="actions">
-        <button type="button" className="btn" onClick={() => setNaming(true)}>
-          Save as group
-        </button>
-        <button type="button" className="btn btn-primary" disabled={locked} onClick={onRequest}>
-          {busy ? "Requesting…" : `Request ${count}`}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export function App({ store, drafts, requestReview, listReviewers, newId, pullRequest }: AppProps) {
+export function App({
+  store,
+  drafts,
+  directory: directoryStore,
+  requestReview,
+  listReviewers,
+  newId,
+  pullRequest,
+}: AppProps) {
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [loadProblem, setLoadProblem] = useState("");
   const [typedEditor, setTypedEditor] = useState<TypedEditor>({ kind: "closed" });
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [groupsNotice, setGroupsNotice] = useState("");
+  const [notice, setNotice] = useState("");
   const [reviewers, setReviewers] = useState<Reviewers>({ state: pullRequest ? "loading" : "absent" });
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [search, setSearch] = useState("");
-  const [known, setKnown] = useState<KnownPeople>({});
+  const [directory, setDirectory] = useState<Directory>(EMPTY_DIRECTORY);
+  const [directoryReady, setDirectoryReady] = useState(false);
+  const directoryRef = useRef<Directory>(EMPTY_DIRECTORY);
 
   useEffect(() => {
     store.load().then(
       ({ groups: readable, unreadable }) => {
         setGroups(readable);
-        setGroupsNotice(describeUnreadableGroups(unreadable));
+        setNotice(describeUnreadableGroups(unreadable));
       },
       (error: unknown) => setLoadProblem(`Saved groups could not be read: ${messageOf(error)}`),
     );
     void drafts.load().then((saved) => setDraft((current) => (current === EMPTY_DRAFT ? saved : current)));
-  }, [store, drafts]);
+    directoryStore
+      .load()
+      .then(
+        (saved) => {
+          directoryRef.current = saved;
+          setDirectory(saved);
+        },
+        (error: unknown) => setNotice(`Remembered people could not be read: ${messageOf(error)}`),
+      )
+      .finally(() => setDirectoryReady(true));
+  }, [store, drafts, directoryStore]);
+
+  const updateDirectory = useCallback(
+    (change: (current: Directory) => Directory) => {
+      const next = change(directoryRef.current);
+      directoryRef.current = next;
+      setDirectory(next);
+      void directoryStore
+        .save(next)
+        .catch((error: unknown) => setNotice(`Remembered people could not be saved: ${messageOf(error)}`));
+    },
+    [directoryStore],
+  );
 
   useEffect(() => {
-    if (!pullRequest) return;
+    if (!pullRequest || !directoryReady) return;
     let stillWanted = true;
     const query = search.trim();
     const timer = setTimeout(
@@ -196,7 +150,7 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
         void listReviewers(query).then((reply) => {
           if (!stillWanted) return;
           setReviewers((previous) => reviewersAfterReply(previous, reply));
-          if (reply.ok) setKnown((previous) => rememberPeople(previous, reply.candidates));
+          if (reply.ok) updateDirectory((current) => rememberPeople(current, reply.candidates));
         });
       },
       query === "" ? 0 : SEARCH_DEBOUNCE_MS,
@@ -205,9 +159,22 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
       stillWanted = false;
       clearTimeout(timer);
     };
-  }, [listReviewers, pullRequest, search]);
+  }, [listReviewers, pullRequest, search, directoryReady, updateDirectory]);
 
-  const pickerReady = reviewers.state === "ready";
+  const remembered = rememberedPeople(directory);
+  const picker =
+    reviewers.state === "ready"
+      ? { found: rankSearchResults(search, reviewers.candidates), problem: reviewers.problem }
+      : pullRequest === null && remembered.length > 0
+        ? {
+            found: rankSearchResults(
+              search,
+              remembered.filter((person) => matchesSearch(person, search)),
+            ),
+            problem: "",
+          }
+        : null;
+  const pickerWillShow = picker !== null || reviewers.state === "loading";
   const editingGroup =
     draft.editingGroupId === null ? undefined : groups?.find((group) => group.id === draft.editingGroupId);
 
@@ -219,10 +186,10 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
   const persist = (next: Group[]) => {
     const previous = groups;
     setGroups(next);
-    setGroupsNotice("");
+    setNotice("");
     void store.save(next).catch((error: unknown) => {
       setGroups(previous);
-      setGroupsNotice(`Groups could not be saved: ${messageOf(error)}`);
+      setNotice(`Groups could not be saved: ${messageOf(error)}`);
     });
   };
 
@@ -232,6 +199,9 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
     const reply = await requestReview(members);
     setBusy(null);
     setStatus(describeReply(reply));
+    if (reply.ok && reply.outcome.gone.length > 0) {
+      updateDirectory((current) => markGone(current, reply.outcome.gone));
+    }
     return reply;
   };
 
@@ -247,20 +217,18 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
     return "";
   };
 
+  const replaceGroup = (changed: Group) =>
+    persist((groups ?? []).map((group) => (group.id === changed.id ? changed : group)));
+
   const saveChanges = (): string => {
     if (draft.selection.length === 0) return "Tick at least one person.";
-    persist(
-      (groups ?? []).map((group) =>
-        group.id === draft.editingGroupId ? { ...group, members: draft.selection } : group,
-      ),
-    );
+    if (editingGroup !== undefined) replaceGroup({ ...editingGroup, members: draft.selection });
     updateDraft(EMPTY_DRAFT);
     return "";
   };
 
   const startEdit = (group: Group) => {
-    if (reviewers.state === "ready" || reviewers.state === "loading")
-      updateDraft({ selection: [...group.members], editingGroupId: group.id });
+    if (pickerWillShow) updateDraft({ selection: [...group.members], editingGroupId: group.id });
     else setTypedEditor({ kind: "edit", group });
   };
 
@@ -269,13 +237,12 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
     if (draft.editingGroupId === group.id) updateDraft(EMPTY_DRAFT);
   };
 
+  const removeMissingMembers = (group: Group) =>
+    replaceGroup({ ...group, members: group.members.filter((member) => !isGone(directory, member)) });
+
   const saveTypedGroup = (typed: GroupDraft) => {
-    const current = groups ?? [];
-    persist(
-      typedEditor.kind === "edit"
-        ? current.map((group) => (group.id === typedEditor.group.id ? { ...group, ...typed } : group))
-        : [...current, { id: newId(), ...typed }],
-    );
+    if (typedEditor.kind === "edit") replaceGroup({ ...typedEditor.group, ...typed });
+    else persist([...(groups ?? []), { id: newId(), ...typed }]);
     setTypedEditor({ kind: "closed" });
   };
 
@@ -300,9 +267,9 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
         )}
       </header>
 
-      {groupsNotice && (
+      {notice && (
         <p className="problem" role="alert">
-          {groupsNotice}
+          {notice}
         </p>
       )}
 
@@ -321,6 +288,7 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
               <GroupCard
                 key={group.id}
                 group={group}
+                goneMembers={group.members.filter((member) => isGone(directory, member))}
                 canRequest={pullRequest !== null}
                 busy={busy === group.id}
                 locked={busy !== null}
@@ -328,13 +296,14 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
                 onRequest={() => void requestFrom(group.id, group.members)}
                 onEdit={() => startEdit(group)}
                 onDelete={() => deleteGroup(group)}
+                onRemoveMissing={() => removeMissingMembers(group)}
               />
             ),
           )}
         </ul>
       )}
 
-      {groups !== null && groups.length === 0 && !pickerReady && typedEditor.kind === "closed" && (
+      {groups !== null && groups.length === 0 && !pickerWillShow && typedEditor.kind === "closed" && (
         <p className="empty">No groups yet.</p>
       )}
 
@@ -351,14 +320,14 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
         </p>
       )}
 
-      {reviewers.state === "ready" && (
+      {picker !== null && (
         <>
           <PeoplePicker
-            found={reviewers.candidates}
-            known={known}
+            found={picker.found}
+            directory={directory}
             selection={draft.selection}
             search={search}
-            problem={reviewers.problem}
+            problem={picker.problem}
             onSearch={setSearch}
             onToggle={(login) => updateDraft({ ...draft, selection: toggleLogin(draft.selection, login) })}
           />
@@ -367,7 +336,7 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
             draft={draft}
             editingGroup={editingGroup}
             busy={busy === SELECTION_BUSY}
-            locked={busy !== null}
+            locked={busy !== null || pullRequest === null}
             onRequest={() => void requestSelection()}
             onSaveAsGroup={saveAsGroup}
             onSaveChanges={saveChanges}
@@ -376,8 +345,7 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
         </>
       )}
 
-      {!pickerReady &&
-        reviewers.state !== "loading" &&
+      {!pickerWillShow &&
         (typedEditor.kind === "new" ? (
           <div className="card card-editing">
             <GroupForm

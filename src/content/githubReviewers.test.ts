@@ -39,6 +39,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: [],
+      gone: [],
     });
     expect(github.posts).toHaveLength(1);
     expect(reviewerFields(github.posts[0])).toEqual([
@@ -97,6 +98,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: [],
+      gone: [],
     });
   });
 
@@ -127,8 +129,55 @@ describe("requestReviewFrom", () => {
       unavailable: ["away-person"],
       notFound: ["mon"],
       unconfirmed: [],
+      gone: [],
     });
     expect(github.posts[0]?.getAll("reviewer_user_ids[]")).toEqual(["103", "102"]);
+  });
+
+  it("checks the GitHub profile of every member not offered, and reports the ones that no longer exist", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(people(), {
+      missingAccounts: ["renamed-person", "acme/old-team", "retired-app[bot]"],
+    });
+
+    const outcome = await requestReviewFrom({ doc: document, fetch: github.fetch }, [
+      "renamed-person",
+      "outside-collaborator",
+      "acme/old-team",
+      "retired-app[bot]",
+      "mona",
+    ]);
+
+    expect(outcome).toEqual({
+      added: ["mona"],
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: ["outside-collaborator"],
+      unconfirmed: [],
+      gone: ["renamed-person", "acme/old-team", "retired-app[bot]"],
+    });
+    expect(github.profileChecks).toEqual([
+      "/renamed-person",
+      "/outside-collaborator",
+      "/orgs/acme/teams/old-team",
+      "/apps/retired-app",
+    ]);
+  });
+
+  it("keeps a member under not offered when GitHub's profile answer is neither found nor missing", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(people(), { profileStatus: 503 });
+
+    const outcome = await requestReviewFrom({ doc: document, fetch: github.fetch }, ["stranger"]);
+
+    expect(outcome).toEqual({
+      added: [],
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: ["stranger"],
+      unconfirmed: [],
+      gone: [],
+    });
   });
 
   it("sends nothing when nobody new needs requesting", async () => {
@@ -143,6 +192,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: ["stranger"],
       unconfirmed: [],
+      gone: [],
     });
     expect(github.posts).toEqual([]);
   });
@@ -159,6 +209,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: ["mona"],
+      gone: [],
     });
   });
 

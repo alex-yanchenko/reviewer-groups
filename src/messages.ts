@@ -34,6 +34,7 @@ export const describeOutcome = (outcome: ReviewRequestOutcome): string =>
     listSentence("Already requested: ", outcome.alreadyRequested),
     listSentence("Not available to review: ", outcome.unavailable),
     listSentence("Not a reviewer option on this PR: ", outcome.notFound),
+    listSentence("No longer on GitHub: ", outcome.gone, " Remove them from your groups."),
     listSentence("GitHub did not confirm: ", outcome.unconfirmed, " Check the pull request."),
   ]
     .filter((sentence) => sentence.length > 0)

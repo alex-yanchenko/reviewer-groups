@@ -1,19 +1,14 @@
 import type { ReviewerCandidate } from "../messages";
-
-export type KnownPeople = Record<string, ReviewerCandidate>;
+import { isGone, rememberedPerson, type Directory } from "./directory";
 
 const loginKey = (login: string) => login.toLowerCase();
 
-export const rememberPeople = (known: KnownPeople, found: ReviewerCandidate[]): KnownPeople => ({
-  ...known,
-  ...Object.fromEntries(found.map((candidate) => [loginKey(candidate.login), candidate])),
-});
-
-const unknownPerson = (login: string): ReviewerCandidate => ({
+const personFor = (directory: Directory, login: string): ReviewerCandidate => ({
   login,
   description: "",
   avatarUrl: null,
   team: login.includes("/"),
+  ...rememberedPerson(directory, login),
   requested: false,
   available: true,
 });
@@ -21,22 +16,24 @@ const unknownPerson = (login: string): ReviewerCandidate => ({
 const rowsFor = (
   found: ReviewerCandidate[],
   selection: string[],
-  known: KnownPeople,
+  directory: Directory,
 ): ReviewerCandidate[] => {
   const foundKeys = new Set(found.map((candidate) => loginKey(candidate.login)));
   const tickedElsewhere = selection
     .filter((login) => !foundKeys.has(loginKey(login)))
-    .map((login) => known[loginKey(login)] ?? unknownPerson(login));
+    .map((login) => personFor(directory, login));
   return [...tickedElsewhere, ...found];
 };
 
 function PersonItem({
   person,
   ticked,
+  gone,
   onToggle,
 }: {
   person: ReviewerCandidate;
   ticked: boolean;
+  gone: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -61,6 +58,7 @@ function PersonItem({
         {person.team && <span className="badge">team</span>}
         {person.requested && <span className="badge badge-done">requested</span>}
         {!person.available && <span className="badge badge-warn">unavailable</span>}
+        {gone && <span className="badge badge-warn">not on GitHub</span>}
       </label>
     </li>
   );
@@ -68,7 +66,7 @@ function PersonItem({
 
 export function PeoplePicker({
   found,
-  known,
+  directory,
   selection,
   search,
   problem,
@@ -76,7 +74,7 @@ export function PeoplePicker({
   onToggle,
 }: {
   found: ReviewerCandidate[];
-  known: KnownPeople;
+  directory: Directory;
   selection: string[];
   search: string;
   problem: string;
@@ -84,7 +82,7 @@ export function PeoplePicker({
   onToggle: (login: string) => void;
 }) {
   const ticked = new Set(selection.map(loginKey));
-  const rows = rowsFor(found, selection, known);
+  const rows = rowsFor(found, selection, directory);
 
   return (
     <section className="people">
@@ -108,6 +106,7 @@ export function PeoplePicker({
             key={loginKey(person.login)}
             person={person}
             ticked={ticked.has(loginKey(person.login))}
+            gone={isGone(directory, person.login)}
             onToggle={() => onToggle(person.login)}
           />
         ))}

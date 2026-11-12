@@ -19,7 +19,14 @@ describe("handleExtensionMessage", () => {
       ),
     ).toEqual({
       ok: true,
-      outcome: { added: ["mona"], alreadyRequested: [], unavailable: [], notFound: [], unconfirmed: [] },
+      outcome: {
+        added: ["mona"],
+        alreadyRequested: [],
+        unavailable: [],
+        notFound: [],
+        unconfirmed: [],
+        gone: [],
+      },
     });
   });
 

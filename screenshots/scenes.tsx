@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { Group } from "../src/groups/group";
 import type { ListReviewersReply, RequestReviewReply, ReviewerCandidate } from "../src/messages";
 import { App } from "../src/popup/App";
+import { EMPTY_DIRECTORY } from "../src/popup/directory";
 import type { Draft } from "../src/popup/draft";
 import "../src/popup/popup.css";
 import "./scenes.css";
@@ -72,7 +73,14 @@ const groups: Group[] = [
 const requestReview = (members: string[]): Promise<RequestReviewReply> =>
   Promise.resolve({
     ok: true,
-    outcome: { added: members, alreadyRequested: [], unavailable: [], notFound: [], unconfirmed: [] },
+    outcome: {
+      added: members,
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: [],
+      unconfirmed: [],
+      gone: [],
+    },
   });
 
 interface Scene {
@@ -193,6 +201,7 @@ const renderScene = async (root: HTMLElement, scene: Scene) => {
             save: () => Promise.resolve(),
           }}
           drafts={{ load: () => Promise.resolve(scene.draft), save: () => Promise.resolve() }}
+          directory={{ load: () => Promise.resolve(EMPTY_DIRECTORY), save: () => Promise.resolve() }}
           requestReview={requestReview}
           listReviewers={listReviewers}
           newId={() => "demo"}

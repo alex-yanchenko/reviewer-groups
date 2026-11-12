@@ -6,10 +6,11 @@ Reviewer Groups is a Chrome extension that helps you request reviews on GitHub p
 
 - **Your groups**: each group's name and the GitHub logins or `org/team` slugs you put in it. Stored with `chrome.storage.sync`, so Chrome syncs it across browsers signed in to the same Chrome profile. Nothing else is stored there.
 - **People you have ticked but not yet requested**: stored with `chrome.storage.session`, so the list survives the popup closing. Chrome deletes it when the browser quits.
+- **People the extension has shown you**: the login, display name, avatar address and person-or-team flag of everyone GitHub listed as a reviewer while you used the extension, plus the logins it found no longer exist on GitHub. Stored with `chrome.storage.local`, on this computer only and not synced, so you can build groups when no pull request is open. Removing the extension deletes it.
 
 ## What it reads
 
-When you click the extension's icon on a GitHub pull request, it reads the list of people GitHub offers as reviewers for that pull request (logins, display names, avatars, and whether each is already requested). It reads this from github.com, inside the tab you have open, using the GitHub session you are already signed in with. It reads nothing on any other page, and nothing at all until you click its icon.
+When you click the extension's icon on a GitHub pull request, it reads the list of people GitHub offers as reviewers for that pull request (logins, display names, avatars, and whether each is already requested). When a request includes someone GitHub does not offer as a reviewer, it also asks github.com whether that person's or team's profile page still exists, to tell you when a login has been renamed or removed. It reads all of this from github.com, inside the tab you have open, using the GitHub session you are already signed in with. It reads nothing on any other page, and nothing at all until you click its icon.
 
 ## What it sends
 

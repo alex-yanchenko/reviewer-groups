@@ -2,12 +2,14 @@ import { createRoot } from "react-dom/client";
 import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
 import type { ListReviewersReply, RequestReviewReply } from "../messages";
 import { listReviewersInTab, readActiveTab, requestReviewInTab } from "./activeTab";
-import { App, type DraftStore, type GroupStore } from "./App";
+import { App, type DirectoryStore, type DraftStore, type GroupStore } from "./App";
+import { loadDirectory, saveDirectory } from "./directory";
 import { loadDraft, saveDraft } from "./draft";
 import "./popup.css";
 
 const syncArea: StorageArea = chrome.storage.sync;
 const sessionArea: StorageArea = chrome.storage.session;
+const localArea: StorageArea = chrome.storage.local;
 
 const store: GroupStore = {
   load: () => loadGroups(syncArea),
@@ -17,6 +19,11 @@ const store: GroupStore = {
 const drafts: DraftStore = {
   load: () => loadDraft(sessionArea),
   save: (draft) => saveDraft(sessionArea, draft),
+};
+
+const directory: DirectoryStore = {
+  load: () => loadDirectory(localArea),
+  save: (people) => saveDirectory(localArea, people),
 };
 
 const NO_TAB = { ok: false, error: "No active tab." } as const;
@@ -33,6 +40,7 @@ const mount = async () => {
     <App
       store={store}
       drafts={drafts}
+      directory={directory}
       newId={() => crypto.randomUUID()}
       pullRequest={tab?.pullRequest ?? null}
       requestReview={requestReview}

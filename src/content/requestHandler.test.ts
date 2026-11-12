@@ -85,6 +85,7 @@ describe("handleExtensionMessage", () => {
           team: false,
           requested: false,
           available: true,
+          reviewState: null,
         },
       ],
     });

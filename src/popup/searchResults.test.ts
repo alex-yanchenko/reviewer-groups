@@ -9,6 +9,7 @@ const person = (login: string, overrides: Partial<ReviewerCandidate> = {}): Revi
   team: false,
   requested: false,
   available: true,
+  reviewState: null,
   ...overrides,
 });
 

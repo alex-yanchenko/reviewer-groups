@@ -22,6 +22,7 @@ const found = (login: string, overrides: Partial<ReviewerCandidate> = {}): Revie
   team: false,
   requested: false,
   available: true,
+  reviewState: null,
   ...overrides,
 });
 
@@ -112,8 +113,8 @@ describe("markGone", () => {
 describe("rememberedPeople", () => {
   it("lists everyone remembered as candidates, sorted by login", () => {
     expect(rememberedPeople({ people: { mona, "acme/backend": team }, gone: [] })).toEqual([
-      { ...team, requested: false, available: true },
-      { ...mona, requested: false, available: true },
+      { ...team, requested: false, available: true, reviewState: null },
+      { ...mona, requested: false, available: true, reviewState: null },
     ]);
   });
 });

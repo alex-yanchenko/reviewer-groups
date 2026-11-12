@@ -1,8 +1,8 @@
 import * as z from "zod/mini";
-import type { ReviewerCandidate, ReviewRequestOutcome } from "./content/githubReviewers";
+import type { ReviewerCandidate, ReviewRequestOutcome, ReviewState } from "./content/githubReviewers";
 import { memberSchema } from "./groups/group";
 
-export type { ReviewerCandidate, ReviewRequestOutcome };
+export type { ReviewerCandidate, ReviewRequestOutcome, ReviewState };
 
 export const REQUEST_REVIEW = "request-review";
 export const LIST_REVIEWERS = "list-reviewers";

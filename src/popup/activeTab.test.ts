@@ -56,6 +56,7 @@ describe("parseCandidatesReply", () => {
     team: false,
     requested: false,
     available: true,
+    reviewState: "commented",
   };
 
   it("accepts the reviewer list the page read", () => {

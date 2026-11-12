@@ -1,5 +1,11 @@
-import type { ReviewerCandidate } from "../messages";
+import type { ReviewerCandidate, ReviewState } from "../messages";
 import { isGone, rememberedPerson, type Directory } from "./directory";
+
+const REVIEW_BADGES: Record<ReviewState, { label: string; className: string }> = {
+  approved: { label: "approved", className: "badge badge-done" },
+  changesRequested: { label: "changes requested", className: "badge badge-warn" },
+  commented: { label: "commented", className: "badge" },
+};
 
 const loginKey = (login: string) => login.toLowerCase();
 
@@ -11,6 +17,7 @@ const personFor = (directory: Directory, login: string): ReviewerCandidate => ({
   ...rememberedPerson(directory, login),
   requested: false,
   available: true,
+  reviewState: null,
 });
 
 const rowsFor = (
@@ -57,6 +64,11 @@ function PersonItem({
         </span>
         {person.team && <span className="badge">team</span>}
         {person.requested && <span className="badge badge-done">requested</span>}
+        {!person.requested && person.reviewState !== null && (
+          <span className={REVIEW_BADGES[person.reviewState].className}>
+            {REVIEW_BADGES[person.reviewState].label}
+          </span>
+        )}
         {!person.available && <span className="badge badge-warn">unavailable</span>}
         {gone && <span className="badge badge-warn">not on GitHub</span>}
       </label>

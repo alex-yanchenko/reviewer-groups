@@ -38,9 +38,35 @@ const hiddenInput = (doc: Document, name: string, value: string) => {
   return input;
 };
 
+export interface ReviewerRow {
+  login: string;
+  tooltips: string[];
+  menuIcons?: number;
+}
+
+const buildReviewerRow = (doc: Document, { login, tooltips, menuIcons = 0 }: ReviewerRow) => {
+  const row = doc.createElement("div");
+  row.className = "d-flex flex-items-center mb-2";
+  const link = doc.createElement("a");
+  link.href = `/${login}`;
+  link.textContent = login;
+  row.append(link);
+  for (let index = 0; index < menuIcons; index += 1) {
+    const icon = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("class", "octicon octicon-check");
+    row.append(icon);
+  }
+  for (const text of tooltips) {
+    const tooltip = doc.createElement("tool-tip");
+    tooltip.textContent = text;
+    row.append(tooltip);
+  }
+  return row;
+};
+
 export const mountPullRequestPage = (
   doc: Document,
-  { tab = "", withForm = true, staleReviewerIds = [] as number[] } = {},
+  { tab = "", withForm = true, staleReviewerIds = [] as number[], reviewerRows = [] as ReviewerRow[] } = {},
 ) => {
   window.history.replaceState({}, "", `${PULL_REQUEST_PATH}${tab}`);
   if (!withForm) return;
@@ -58,7 +84,7 @@ export const mountPullRequestPage = (
   );
   const marker = doc.createElement("span");
   marker.className = "page-sidebar";
-  sidebarItem.append(form, marker);
+  sidebarItem.append(form, marker, ...reviewerRows.map((row) => buildReviewerRow(doc, row)));
   doc.body.append(sidebarItem);
 };
 

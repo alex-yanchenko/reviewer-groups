@@ -4,7 +4,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/", "node_modules/", "coverage/"] },
+  { ignores: ["dist/", "node_modules/", "coverage/", "screenshots/.build/"] },
   js.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],
@@ -20,7 +20,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.{js,mjs}"],
+    files: ["*.{js,mjs}", "screenshots/*.mjs"],
     languageOptions: { globals: { ...globals.node } },
   },
 );

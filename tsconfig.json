@@ -20,5 +20,5 @@
     "noUnusedParameters": true,
     "allowUnreachableCode": false
   },
-  "include": ["src", "vitest.config.ts"]
+  "include": ["src", "screenshots", "vitest.config.ts"]
 }

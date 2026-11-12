@@ -2,3 +2,5 @@ node_modules/
 dist/
 *.zip
 coverage/
+screenshots/.build/
+.DS_Store

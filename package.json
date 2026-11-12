@@ -1,6 +1,6 @@
 {
   "name": "reviewer-groups",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Chrome extension: request GitHub pull request reviews from several people at once, and save them as groups.",

@@ -15,11 +15,14 @@ export interface FakeGitHubOptions {
   postStatus?: number;
   postIgnored?: boolean;
   searchAnswer?: unknown;
+  missingAccounts?: string[];
+  profileStatus?: number;
 }
 
 export interface FakeGitHub {
   fetch: ReturnType<typeof vi.fn<typeof fetch>>;
   posts: URLSearchParams[];
+  profileChecks: string[];
   requestedLogins: () => string[];
 }
 
@@ -99,14 +102,27 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
     return new Response(freshSidebar(requestedLogins()), { headers: { "content-type": "text/html" } });
   };
 
+  const profileChecks: string[] = [];
+  const missing = new Set((options.missingAccounts ?? []).map((login) => login.toLowerCase()));
+  const answerProfile = (url: URL) => {
+    profileChecks.push(url.pathname);
+    if (options.profileStatus !== undefined) return new Response(null, { status: options.profileStatus });
+    const login = decodeURIComponent(url.pathname)
+      .replace(/^\/orgs\/([^/]+)\/teams\/([^/]+)$/, "$1/$2")
+      .replace(/^\/apps\/([^/]+)$/, "$1[bot]")
+      .replace(/^\//, "");
+    return new Response(null, { status: missing.has(login.toLowerCase()) ? 404 : 200 });
+  };
+
   const fakeFetch = vi.fn<typeof fetch>((input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (init?.method === "POST") {
       const body = init.body instanceof URLSearchParams ? init.body : new URLSearchParams();
       return Promise.resolve(answerPost(body));
     }
+    if (init?.method === "HEAD") return Promise.resolve(answerProfile(url));
     return Promise.resolve(answerSearch(url));
   });
 
-  return { fetch: fakeFetch, posts, requestedLogins };
+  return { fetch: fakeFetch, posts, profileChecks, requestedLogins };
 };

@@ -7,7 +7,8 @@ import type {
   ReviewerCandidate,
   ReviewRequestOutcome,
 } from "../messages";
-import { App, type Draft, type DraftStore, type GroupStore } from "./App";
+import { App, type DirectoryStore, type Draft, type DraftStore, type GroupStore } from "./App";
+import { EMPTY_DIRECTORY, type Directory } from "./directory";
 
 const backend: Group = { id: "g1", name: "Backend", members: ["mona", "hubot"] };
 
@@ -27,6 +28,7 @@ const outcome = (overrides: Partial<ReviewRequestOutcome>): ReviewRequestOutcome
   unavailable: [],
   notFound: [],
   unconfirmed: [],
+  gone: [],
   ...overrides,
 });
 
@@ -48,6 +50,7 @@ interface RenderOptions {
   searches?: Record<string, ReviewerCandidate[]>;
   draft?: Draft;
   draftLoad?: Promise<Draft>;
+  directory?: Directory;
   requestReview?: (members: string[]) => Promise<RequestReviewReply>;
 }
 
@@ -60,8 +63,13 @@ const renderApp = ({
   searches = {},
   draft = emptyDraft,
   draftLoad = Promise.resolve(draft),
+  directory = EMPTY_DIRECTORY,
   requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
 }: RenderOptions = {}) => {
+  const directoryStore = {
+    load: vi.fn<DirectoryStore["load"]>().mockResolvedValueOnce(directory),
+    save: vi.fn<DirectoryStore["save"]>().mockResolvedValue(undefined),
+  } satisfies DirectoryStore;
   const save = vi.fn<GroupStore["save"]>();
   if (saveFailure === undefined) save.mockResolvedValue(undefined);
   else save.mockRejectedValueOnce(saveFailure);
@@ -82,13 +90,20 @@ const renderApp = ({
     <App
       store={store}
       drafts={drafts}
+      directory={directoryStore}
       requestReview={requestReview}
       listReviewers={listReviewers}
       newId={() => "new-id"}
       pullRequest={pullRequest}
     />,
   );
-  return { save: store.save, saveDraft: drafts.save, listReviewers, requestReview };
+  return {
+    save: store.save,
+    saveDraft: drafts.save,
+    saveDirectory: directoryStore.save,
+    listReviewers,
+    requestReview,
+  };
 };
 
 const tick = async (login: string) => fireEvent.click(await screen.findByRole("checkbox", { name: login }));
@@ -130,6 +145,25 @@ describe("App on a pull request", () => {
       expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual(["mona"]),
     );
     expect(listReviewers).toHaveBeenLastCalledWith("lisa");
+  });
+
+  it("shows only the people who match the search, not everyone GitHub adds because they are already requested", async () => {
+    renderApp({
+      searches: {
+        Noor: [
+          candidate("river-chen", { description: "River Chen", requested: true }),
+          candidate("sam-okafor", { description: "Sam Okafor", requested: true }),
+          candidate("noorh", { description: "Noor Haddad" }),
+        ],
+      },
+    });
+    await screen.findByRole("list", { name: "People" });
+
+    fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "Noor" } });
+
+    await vi.waitFor(() =>
+      expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual(["noorh"]),
+    );
   });
 
   it("keeps someone found only by search ticked and visible after the search is cleared", async () => {
@@ -247,6 +281,7 @@ describe("App on a pull request", () => {
   it("edits a group by ticking and unticking people", async () => {
     const { save } = renderApp({ groups: [backend] });
     fireEvent.click(await screen.findByRole("button", { name: "Edit Backend" }));
+    await screen.findByRole("list", { name: "People" });
     expect(isTicked("mona")).toBe(true);
     expect(isTicked("hubot")).toBe(true);
 
@@ -263,6 +298,7 @@ describe("App on a pull request", () => {
     renderApp({ groups: [{ id: "g2", name: "Mixed", members: ["stranger", "mona"] }] });
 
     fireEvent.click(await screen.findByRole("button", { name: "Edit Mixed" }));
+    await screen.findByRole("list", { name: "People" });
 
     expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual([
       "stranger",
@@ -370,6 +406,136 @@ describe("App on a pull request", () => {
   });
 });
 
+describe("App remembering people", () => {
+  const remembered: Directory = {
+    people: {
+      mona: { login: "mona", description: "Mona Lisa", avatarUrl: null, team: false },
+      spacecat: { login: "spacecat", description: "Space Cat", avatarUrl: null, team: false },
+    },
+    gone: [],
+  };
+
+  it("remembers everyone GitHub lists on a pull request", async () => {
+    const { saveDirectory } = renderApp();
+
+    await vi.waitFor(() =>
+      expect(saveDirectory).toHaveBeenLastCalledWith({
+        people: {
+          mona: {
+            login: "mona",
+            description: "Mona Lisa",
+            avatarUrl: "https://avatars.githubusercontent.com/u/101",
+            team: false,
+          },
+          hubot: { login: "hubot", description: "", avatarUrl: null, team: false },
+          octocat: { login: "octocat", description: "", avatarUrl: null, team: false },
+          "acme/backend": { login: "acme/backend", description: "API owners", avatarUrl: null, team: true },
+        },
+        gone: [],
+      }),
+    );
+  });
+
+  it("offers remembered people as a tick list away from a pull request, without a request button that works", async () => {
+    const { save } = renderApp({ pullRequest: null, directory: remembered });
+    await tick("spacecat");
+    await tick("mona");
+
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Request 2" }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Save as group" }));
+    fireEvent.change(screen.getByLabelText("Group name"), { target: { value: "Cats" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save group" }));
+
+    expect(await screen.findByRole("listitem", { name: "Cats" })).toBeTruthy();
+    expect(save).toHaveBeenCalledWith([{ id: "new-id", name: "Cats", members: ["spacecat", "mona"] }]);
+  });
+
+  it("narrows remembered people by login or name away from a pull request", async () => {
+    renderApp({ pullRequest: null, directory: remembered });
+    await screen.findByRole("list", { name: "People" });
+
+    fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "space" } });
+
+    await vi.waitFor(() =>
+      expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual([
+        "spacecat",
+      ]),
+    );
+  });
+
+  it("marks group members a request found missing from GitHub and remembers that", async () => {
+    const requestReview = vi
+      .fn<(members: string[]) => Promise<RequestReviewReply>>()
+      .mockResolvedValueOnce({ ok: true, outcome: outcome({ added: ["mona"], gone: ["renamed-person"] }) });
+    const { saveDirectory } = renderApp({
+      groups: [{ id: "g1", name: "Backend", members: ["mona", "renamed-person"] }],
+      requestReview,
+    });
+    await screen.findByRole("list", { name: "People" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Request Backend" }));
+
+    const card = screen.getByRole("listitem", { name: "Backend" });
+    expect(await within(card).findByText("1 member is no longer on GitHub.")).toBeTruthy();
+    expect(saveDirectory).toHaveBeenLastCalledWith({
+      people: {
+        mona: {
+          login: "mona",
+          description: "Mona Lisa",
+          avatarUrl: "https://avatars.githubusercontent.com/u/101",
+          team: false,
+        },
+        hubot: { login: "hubot", description: "", avatarUrl: null, team: false },
+        octocat: { login: "octocat", description: "", avatarUrl: null, team: false },
+        "acme/backend": { login: "acme/backend", description: "API owners", avatarUrl: null, team: true },
+      },
+      gone: ["renamed-person"],
+    });
+  });
+
+  it("shows members already known to be missing and removes them from the group in one click", async () => {
+    const { save } = renderApp({
+      groups: [{ id: "g1", name: "Backend", members: ["mona", "renamed-person", "hubot"] }],
+      directory: { people: {}, gone: ["renamed-person"] },
+      pullRequest: null,
+    });
+    const card = await screen.findByRole("listitem", { name: "Backend" });
+
+    expect(within(card).getByText("renamed-person").className).toBe("member member-gone");
+    fireEvent.click(within(card).getByRole("button", { name: "Remove missing members from Backend" }));
+
+    expect(save).toHaveBeenCalledWith([{ id: "g1", name: "Backend", members: ["mona", "hubot"] }]);
+    expect(
+      within(screen.getByRole("listitem", { name: "Backend" })).queryByText(/no longer on GitHub/),
+    ).toBeNull();
+  });
+
+  it("does not offer to remove missing members when that would leave the group empty", async () => {
+    renderApp({
+      groups: [{ id: "g1", name: "Gone", members: ["renamed-person"] }],
+      directory: { people: {}, gone: ["renamed-person"] },
+      pullRequest: null,
+    });
+    const card = await screen.findByRole("listitem", { name: "Gone" });
+
+    expect(
+      within(card).getByText("Every member is no longer on GitHub. Delete the group or edit it."),
+    ).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: /Remove missing/ })).toBeNull();
+  });
+
+  it("marks a ticked person who is no longer on GitHub in the tick list", async () => {
+    renderApp({
+      directory: { people: {}, gone: ["renamed-person"] },
+      draft: { selection: ["renamed-person"], editingGroupId: null },
+    });
+
+    const row = await screen.findByRole("listitem", { name: "renamed-person" });
+
+    expect(within(row).getByText("not on GitHub")).toBeTruthy();
+  });
+});
+
 describe("App away from a pull request", () => {
   it("does not ask the tab for reviewers and says where to go", async () => {
     const { listReviewers, requestReview } = renderApp({ groups: [backend], pullRequest: null });
@@ -462,6 +628,7 @@ describe("App away from a pull request", () => {
       <App
         store={{ load, save: vi.fn() }}
         drafts={{ load: vi.fn().mockResolvedValueOnce(emptyDraft), save: vi.fn() }}
+        directory={{ load: vi.fn().mockResolvedValueOnce(EMPTY_DIRECTORY), save: vi.fn() }}
         requestReview={vi.fn()}
         listReviewers={vi.fn()}
         newId={() => "new-id"}

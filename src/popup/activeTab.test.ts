@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { describePullRequest, listReviewersInTab, parseCandidatesReply, parseReply } from "./activeTab";
 
-const emptyOutcome = { added: [], alreadyRequested: [], unavailable: [], notFound: [], unconfirmed: [] };
+const emptyOutcome = {
+  added: [],
+  alreadyRequested: [],
+  unavailable: [],
+  notFound: [],
+  unconfirmed: [],
+  gone: [],
+};
 
 describe("describePullRequest", () => {
   it("names the repository and number of a pull request page", () => {

@@ -9,12 +9,11 @@ import {
   type RequestReviewReply,
   type ReviewerCandidate,
 } from "../messages";
+import { trustedAvatarUrl } from "./avatar";
 
 const PULL_REQUEST_URL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)(?:[/?#]|$)/;
 
 const PICKER_SCRIPT = "picker.js";
-
-const AVATAR_HOST = "avatars.githubusercontent.com";
 
 const UNEXPECTED_ANSWER = { ok: false, error: "The page sent back an unexpected answer." } as const;
 
@@ -29,6 +28,7 @@ const replySchema = z.discriminatedUnion("ok", [
       unavailable: z.array(z.string()),
       notFound: z.array(z.string()),
       unconfirmed: z.array(z.string()),
+      gone: z.array(z.string()),
     }),
   }),
   failureSchema,
@@ -58,16 +58,9 @@ export const parseReply = (raw: unknown): RequestReviewReply => {
   return result.success ? result.data : UNEXPECTED_ANSWER;
 };
 
-const isGitHubAvatar = (url: string) => {
-  const parsed = URL.parse(url);
-  return parsed !== null && parsed.protocol === "https:" && parsed.hostname === AVATAR_HOST;
-};
-
 const parseCandidate = (raw: unknown): ReviewerCandidate[] => {
   const result = candidateSchema.safeParse(raw);
-  if (!result.success) return [];
-  const { avatarUrl } = result.data;
-  return [{ ...result.data, avatarUrl: avatarUrl !== null && isGitHubAvatar(avatarUrl) ? avatarUrl : null }];
+  return result.success ? [{ ...result.data, avatarUrl: trustedAvatarUrl(result.data.avatarUrl) }] : [];
 };
 
 export const parseCandidatesReply = (raw: unknown): ListReviewersReply => {

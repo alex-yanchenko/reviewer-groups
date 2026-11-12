@@ -21,6 +21,7 @@ export interface ReviewRequestOutcome {
   unavailable: string[];
   notFound: string[];
   unconfirmed: string[];
+  gone: string[];
 }
 
 export interface GitHubPage {
@@ -172,6 +173,29 @@ const sendReviewers = async (page: GitHubPage, form: HTMLFormElement, reviewers:
 const currentlyRequested = async (page: GitHubPage) =>
   (await searchReviewers(page, "")).filter((entry) => entry.selected);
 
+const profilePath = (login: string) => {
+  const [owner, team] = login.split("/");
+  if (team !== undefined) return `/orgs/${encodeURIComponent(owner ?? "")}/teams/${encodeURIComponent(team)}`;
+  const app = /^(.+)\[bot\]$/i.exec(login);
+  return app ? `/apps/${encodeURIComponent(app[1] ?? "")}` : `/${encodeURIComponent(login)}`;
+};
+
+const accountIsGone = async ({ doc, fetch }: GitHubPage, login: string): Promise<boolean> => {
+  const response = await fetch(new URL(profilePath(login), doc.location.origin).href, {
+    method: "HEAD",
+    credentials: "same-origin",
+  });
+  return response.status === 404;
+};
+
+const sortOutGoneAccounts = async (page: GitHubPage, outcome: ReviewRequestOutcome) => {
+  const checked = await Promise.all(
+    outcome.notFound.map(async (login) => ({ login, gone: await accountIsGone(page, login) })),
+  );
+  outcome.notFound = checked.filter(({ gone }) => !gone).map(({ login }) => login);
+  outcome.gone = checked.filter(({ gone }) => gone).map(({ login }) => login);
+};
+
 const requestLookedUpMembers = async (page: GitHubPage, members: readonly string[]) => {
   const form = findReviewerForm(page.doc);
   const outcome: ReviewRequestOutcome = {
@@ -180,6 +204,7 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
     unavailable: [],
     notFound: [],
     unconfirmed: [],
+    gone: [],
   };
   const toAdd: { member: string; entry: ReviewerEntry }[] = [];
   for (const { member, entry } of await Promise.all(members.map((member) => lookUpMember(page, member)))) {
@@ -188,6 +213,7 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
     else if (entry.disabled ?? false) outcome.unavailable.push(member);
     else toAdd.push({ member, entry });
   }
+  await sortOutGoneAccounts(page, outcome);
   if (toAdd.length === 0) return outcome;
   await sendReviewers(page, form, [...(await currentlyRequested(page)), ...toAdd.map(({ entry }) => entry)]);
   const confirmed = await currentlyRequested(page);

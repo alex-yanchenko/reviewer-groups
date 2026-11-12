@@ -169,7 +169,7 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
         `Saved groups could not be read: ${error instanceof Error ? error.message : String(error)}`,
       );
     });
-    void drafts.load().then(setDraft);
+    void drafts.load().then((saved) => setDraft((current) => (current === EMPTY_DRAFT ? saved : current)));
   }, [store, drafts]);
 
   useEffect(() => {
@@ -239,7 +239,8 @@ export function App({ store, drafts, requestReview, listReviewers, newId, pullRe
   };
 
   const startEdit = (group: Group) => {
-    if (pickerReady) updateDraft({ selection: [...group.members], editingGroupId: group.id });
+    if (reviewers.state === "ready" || reviewers.state === "loading")
+      updateDraft({ selection: [...group.members], editingGroupId: group.id });
     else setTypedEditor({ kind: "edit", group });
   };
 

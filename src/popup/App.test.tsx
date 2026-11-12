@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Group } from "../groups/group";
 import type { ListReviewersReply, RequestReviewReply, ReviewerCandidate } from "../messages";
@@ -30,6 +30,7 @@ interface RenderOptions {
   candidates?: ListReviewersReply;
   searches?: Record<string, ReviewerCandidate[]>;
   draft?: Draft;
+  draftLoad?: Promise<Draft>;
   requestReview?: (members: string[]) => Promise<RequestReviewReply>;
 }
 
@@ -39,6 +40,7 @@ const renderApp = ({
   candidates = { ok: true, candidates: reviewers },
   searches = {},
   draft = emptyDraft,
+  draftLoad = Promise.resolve(draft),
   requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
 }: RenderOptions = {}) => {
   const store = {
@@ -46,7 +48,7 @@ const renderApp = ({
     save: vi.fn<GroupStore["save"]>().mockResolvedValue(undefined),
   } satisfies GroupStore;
   const drafts = {
-    load: vi.fn<DraftStore["load"]>().mockResolvedValueOnce(draft),
+    load: vi.fn<DraftStore["load"]>().mockReturnValueOnce(draftLoad),
     save: vi.fn<DraftStore["save"]>().mockResolvedValue(undefined),
   } satisfies DraftStore;
   const listReviewers = vi
@@ -256,6 +258,23 @@ describe("App on a pull request", () => {
     expect(await screen.findByRole("button", { name: "Save changes" })).toBeTruthy();
     expect(isTicked("mona")).toBe(true);
     expect(isTicked("hubot")).toBe(false);
+  });
+
+  it("keeps an edit started before the saved draft finished loading", async () => {
+    let finishDraftLoad: (draft: Draft) => void = () => undefined;
+    const draftLoad = new Promise<Draft>((resolve) => {
+      finishDraftLoad = resolve;
+    });
+    renderApp({ groups: [backend], draftLoad });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Backend" }));
+
+    await act(async () => {
+      finishDraftLoad(emptyDraft);
+      await draftLoad;
+    });
+
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+    expect(isTicked("mona")).toBe(true);
   });
 
   it("requests review from a saved group in one click", async () => {

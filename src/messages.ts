@@ -1,8 +1,13 @@
 import * as z from "zod/mini";
-import type { ReviewRequestOutcome } from "./content/reviewerPicker";
+import type { ReviewerCandidate, ReviewRequestOutcome } from "./content/reviewerPicker";
 import { memberSchema } from "./groups/group";
 
+export type { ReviewerCandidate, ReviewRequestOutcome };
+
 export const REQUEST_REVIEW = "request-review";
+export const LIST_REVIEWERS = "list-reviewers";
+
+export type ListReviewersReply = { ok: true; candidates: ReviewerCandidate[] } | { ok: false; error: string };
 
 export const requestReviewMessageSchema = z.object({
   type: z.literal(REQUEST_REVIEW),

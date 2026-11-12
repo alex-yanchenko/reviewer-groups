@@ -29,7 +29,16 @@ interface ReviewerPicker {
   summary: HTMLElement;
 }
 
+export interface ReviewerCandidate {
+  login: string;
+  description: string;
+  avatarUrl: string | null;
+  team: boolean;
+  requested: boolean;
+}
+
 interface ReviewerOption {
+  login: string;
   label: HTMLLabelElement;
   input: HTMLInputElement;
 }
@@ -46,18 +55,33 @@ const setPickerOpen = (picker: ReviewerPicker, open: boolean) => {
   if (picker.details.open !== open) picker.summary.click();
 };
 
-const readOptionsByLogin = (form: HTMLFormElement): Map<string, ReviewerOption> => {
-  const options = new Map<string, ReviewerOption>();
-  for (const label of form.querySelectorAll<HTMLLabelElement>(PICKER_OPTION)) {
-    const login = label.querySelector(".js-username")?.textContent?.trim();
-    const input = label.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    if (login && input) options.set(login.toLowerCase(), { label, input });
-  }
-  return options;
+const readOption = (label: HTMLLabelElement): ReviewerOption[] => {
+  const login = label.querySelector(".js-username")?.textContent?.trim();
+  const input = label.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  return login && input ? [{ login, label, input }] : [];
 };
+
+const readOptions = (form: HTMLFormElement): ReviewerOption[] =>
+  [...form.querySelectorAll<HTMLLabelElement>(PICKER_OPTION)].flatMap(readOption);
+
+const readOptionsByLogin = (form: HTMLFormElement): Map<string, ReviewerOption> =>
+  new Map(readOptions(form).map((option) => [option.login.toLowerCase(), option]));
 
 const isTicked = (option: ReviewerOption) =>
   option.input.checked || option.label.getAttribute("aria-checked") === "true";
+
+const visibleAvatarUrl = (label: HTMLLabelElement): string | null => {
+  const avatar = label.querySelector("img");
+  return avatar !== null && !avatar.hidden && avatar.src.length > 0 ? avatar.src : null;
+};
+
+const describeOption = (option: ReviewerOption): ReviewerCandidate => ({
+  login: option.login,
+  description: option.label.querySelector(".js-description")?.textContent?.trim() ?? "",
+  avatarUrl: visibleAvatarUrl(option.label),
+  team: option.input.name.startsWith("reviewer_team_ids"),
+  requested: isTicked(option),
+});
 
 const tickMembers = (
   options: Map<string, ReviewerOption>,
@@ -78,20 +102,33 @@ const tickMembers = (
   return outcome;
 };
 
-export const requestReviewFrom = async (
+const withPickerOpen = async <T>(
   doc: Document,
-  members: readonly string[],
-  { timeoutMs }: { timeoutMs: number },
-): Promise<ReviewRequestOutcome> => {
+  timeoutMs: number,
+  readLoadedForm: (form: HTMLFormElement) => T,
+): Promise<T> => {
   const picker = findPicker(doc);
   setPickerOpen(picker, true);
   try {
-    await pWaitFor(() => readOptionsByLogin(picker.form).size > 0, {
+    await pWaitFor(() => readOptions(picker.form).length > 0, {
       interval: 50,
       timeout: { milliseconds: timeoutMs, message: new ReviewerOptionsTimeoutError(timeoutMs) },
     });
-    return tickMembers(readOptionsByLogin(picker.form), members);
+    return readLoadedForm(picker.form);
   } finally {
     setPickerOpen(picker, false);
   }
 };
+
+export const requestReviewFrom = (
+  doc: Document,
+  members: readonly string[],
+  { timeoutMs }: { timeoutMs: number },
+): Promise<ReviewRequestOutcome> =>
+  withPickerOpen(doc, timeoutMs, (form) => tickMembers(readOptionsByLogin(form), members));
+
+export const readReviewerCandidates = (
+  doc: Document,
+  { timeoutMs }: { timeoutMs: number },
+): Promise<ReviewerCandidate[]> =>
+  withPickerOpen(doc, timeoutMs, (form) => readOptions(form).map(describeOption));

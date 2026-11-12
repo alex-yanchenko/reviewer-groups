@@ -1,149 +1,160 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Group } from "../groups/group";
-import { parseMemberList } from "../groups/memberList";
-import { describeReply, type RequestReviewReply } from "../messages";
+import {
+  describeReply,
+  type ListReviewersReply,
+  type RequestReviewReply,
+  type ReviewerCandidate,
+} from "../messages";
+import { EMPTY_DRAFT, type Draft } from "./draft";
+import { GroupCard } from "./GroupCard";
+import { GroupForm, type GroupDraft } from "./GroupForm";
+import { PeoplePicker } from "./PeoplePicker";
+
+export type { Draft };
 
 export interface GroupStore {
   load(): Promise<Group[]>;
   save(groups: Group[]): Promise<void>;
 }
 
+export interface DraftStore {
+  load(): Promise<Draft>;
+  save(draft: Draft): Promise<void>;
+}
+
 export interface AppProps {
   store: GroupStore;
+  drafts: DraftStore;
   requestReview: (members: string[]) => Promise<RequestReviewReply>;
+  listReviewers: () => Promise<ListReviewersReply>;
   newId: () => string;
   pullRequest: string | null;
 }
 
-type Editor = { kind: "closed" } | { kind: "new" } | { kind: "edit"; group: Group };
+type TypedEditor = { kind: "closed" } | { kind: "new" } | { kind: "edit"; group: Group };
 
-interface GroupDraft {
-  name: string;
-  members: string[];
-}
+type Reviewers =
+  | { state: "absent" }
+  | { state: "loading" }
+  | { state: "ready"; candidates: ReviewerCandidate[] }
+  | { state: "failed"; error: string };
 
-const validateDraft = (name: string, membersText: string): GroupDraft | string => {
-  const { members, invalid } = parseMemberList(membersText);
-  if (name.trim().length === 0) return "Give the group a name.";
-  if (invalid.length > 0) return `Not GitHub logins: ${invalid.join(", ")}`;
-  if (members.length === 0) return "Add at least one GitHub login.";
-  return { name: name.trim(), members };
-};
+const SELECTION_BUSY = "selection";
 
-function GroupForm({
-  initial,
-  onSave,
-  onCancel,
-}: {
-  initial: GroupDraft;
-  onSave: (draft: GroupDraft) => void;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState(initial.name);
-  const [membersText, setMembersText] = useState(initial.members.join(", "));
-  const [problem, setProblem] = useState("");
+const toggleLogin = (selection: string[], login: string): string[] =>
+  selection.some((ticked) => ticked.toLowerCase() === login.toLowerCase())
+    ? selection.filter((ticked) => ticked.toLowerCase() !== login.toLowerCase())
+    : [...selection, login];
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const draft = validateDraft(name, membersText);
-    if (typeof draft === "string") {
-      setProblem(draft);
-      return;
-    }
-    onSave(draft);
-  };
+const reviewersFromReply = (reply: ListReviewersReply): Reviewers =>
+  reply.ok ? { state: "ready", candidates: reply.candidates } : { state: "failed", error: reply.error };
 
-  return (
-    <form className="editor" onSubmit={submit}>
-      <label className="field">
-        <span>Group name</span>
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="Backend"
-          autoFocus
-        />
-      </label>
-      <label className="field">
-        <span>Members</span>
-        <textarea
-          value={membersText}
-          onChange={(event) => setMembersText(event.target.value)}
-          placeholder="mona, hubot, acme/backend-team"
-          rows={3}
-        />
-      </label>
-      <p className="hint">GitHub logins or org/team slugs, separated by commas, spaces or new lines.</p>
-      {problem && (
-        <p className="problem" role="alert">
-          {problem}
-        </p>
-      )}
-      <div className="actions">
-        <button type="button" className="btn" onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="submit" className="btn btn-primary">
-          Save group
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function GroupCard({
-  group,
-  canRequest,
+function SelectionBar({
+  draft,
+  editingGroup,
   busy,
   onRequest,
-  onEdit,
-  onDelete,
+  onSaveAsGroup,
+  onSaveChanges,
+  onCancelEdit,
 }: {
-  group: Group;
-  canRequest: boolean;
+  draft: Draft;
+  editingGroup: Group | undefined;
   busy: boolean;
   onRequest: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onSaveAsGroup: (name: string) => string;
+  onSaveChanges: () => string;
+  onCancelEdit: () => void;
 }) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [problem, setProblem] = useState("");
+  const count = draft.selection.length;
+
+  const submitName = (event: FormEvent) => {
+    event.preventDefault();
+    const outcome = onSaveAsGroup(name);
+    setProblem(outcome);
+    if (outcome === "") {
+      setNaming(false);
+      setName("");
+    }
+  };
+
+  const problemLine = problem && (
+    <p className="problem" role="alert">
+      {problem}
+    </p>
+  );
+
+  if (editingGroup !== undefined) {
+    return (
+      <div className="selection-bar">
+        <span className="selection-count">Editing {editingGroup.name}</span>
+        {problemLine}
+        <div className="actions">
+          <button type="button" className="btn" onClick={onCancelEdit}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => setProblem(onSaveChanges())}>
+            Save changes
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (naming) {
+    return (
+      <form className="selection-bar" onSubmit={submitName}>
+        <label className="field">
+          <span>Group name</span>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Backend"
+            autoFocus
+          />
+        </label>
+        {problemLine}
+        <div className="actions">
+          <button type="button" className="btn" onClick={() => setNaming(false)}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary">
+            Save group
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  if (count === 0) return null;
+
   return (
-    <li className="card" aria-label={group.name}>
-      <div className="card-text">
-        <strong className="card-name">{group.name}</strong>
-        <span className="card-members">{group.members.join(", ")}</span>
-      </div>
-      <div className="card-actions">
-        <button
-          type="button"
-          className="btn btn-primary"
-          aria-label={`Request ${group.name}`}
-          disabled={!canRequest || busy}
-          onClick={onRequest}
-        >
-          {busy ? "Requesting…" : "Request"}
+    <div className="selection-bar selection-bar-row">
+      <span className="selection-count">{count} selected</span>
+      <div className="actions">
+        <button type="button" className="btn" onClick={() => setNaming(true)}>
+          Save as group
         </button>
-        <button type="button" className="btn btn-quiet" aria-label={`Edit ${group.name}`} onClick={onEdit}>
-          Edit
-        </button>
-        <button
-          type="button"
-          className="btn btn-quiet btn-danger"
-          aria-label={`Delete ${group.name}`}
-          onClick={onDelete}
-        >
-          Delete
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={onRequest}>
+          {busy ? "Requesting…" : `Request ${count}`}
         </button>
       </div>
-    </li>
+    </div>
   );
 }
 
-export function App({ store, requestReview, newId, pullRequest }: AppProps) {
+export function App({ store, drafts, requestReview, listReviewers, newId, pullRequest }: AppProps) {
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [loadProblem, setLoadProblem] = useState("");
-  const [editor, setEditor] = useState<Editor>({ kind: "closed" });
+  const [typedEditor, setTypedEditor] = useState<TypedEditor>({ kind: "closed" });
   const [status, setStatus] = useState("");
-  const [busyGroupId, setBusyGroupId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [reviewers, setReviewers] = useState<Reviewers>({ state: pullRequest ? "loading" : "absent" });
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
   useEffect(() => {
     store.load().then(setGroups, (error: unknown) => {
@@ -151,29 +162,74 @@ export function App({ store, requestReview, newId, pullRequest }: AppProps) {
         `Saved groups could not be read: ${error instanceof Error ? error.message : String(error)}`,
       );
     });
-  }, [store]);
+    void drafts.load().then(setDraft);
+    if (pullRequest) void listReviewers().then((reply) => setReviewers(reviewersFromReply(reply)));
+  }, [store, drafts, listReviewers, pullRequest]);
 
-  const persist = async (next: Group[]) => {
+  const pickerReady = reviewers.state === "ready";
+  const editingGroup =
+    draft.editingGroupId === null ? undefined : groups?.find((group) => group.id === draft.editingGroupId);
+
+  const updateDraft = (next: Draft) => {
+    setDraft(next);
+    void drafts.save(next);
+  };
+
+  const persist = (next: Group[]) => {
     setGroups(next);
-    await store.save(next);
+    void store.save(next);
   };
 
-  const saveDraft = async (draft: GroupDraft) => {
-    const current = groups ?? [];
-    const next =
-      editor.kind === "edit"
-        ? current.map((group) => (group.id === editor.group.id ? { ...group, ...draft } : group))
-        : [...current, { id: newId(), ...draft }];
-    setEditor({ kind: "closed" });
-    await persist(next);
-  };
-
-  const request = async (group: Group) => {
-    setBusyGroupId(group.id);
+  const requestFrom = async (busyKey: string, members: string[]): Promise<RequestReviewReply> => {
+    setBusy(busyKey);
     setStatus("");
-    const reply = await requestReview(group.members);
-    setBusyGroupId(null);
+    const reply = await requestReview(members);
+    setBusy(null);
     setStatus(describeReply(reply));
+    return reply;
+  };
+
+  const requestSelection = async () => {
+    const reply = await requestFrom(SELECTION_BUSY, draft.selection);
+    if (reply.ok) updateDraft(EMPTY_DRAFT);
+  };
+
+  const saveAsGroup = (name: string): string => {
+    if (name.trim().length === 0) return "Give the group a name.";
+    persist([...(groups ?? []), { id: newId(), name: name.trim(), members: draft.selection }]);
+    updateDraft(EMPTY_DRAFT);
+    return "";
+  };
+
+  const saveChanges = (): string => {
+    if (draft.selection.length === 0) return "Tick at least one person.";
+    persist(
+      (groups ?? []).map((group) =>
+        group.id === draft.editingGroupId ? { ...group, members: draft.selection } : group,
+      ),
+    );
+    updateDraft(EMPTY_DRAFT);
+    return "";
+  };
+
+  const startEdit = (group: Group) => {
+    if (pickerReady) updateDraft({ selection: [...group.members], editingGroupId: group.id });
+    else setTypedEditor({ kind: "edit", group });
+  };
+
+  const deleteGroup = (group: Group) => {
+    persist((groups ?? []).filter((other) => other.id !== group.id));
+    if (draft.editingGroupId === group.id) updateDraft(EMPTY_DRAFT);
+  };
+
+  const saveTypedGroup = (typed: GroupDraft) => {
+    const current = groups ?? [];
+    persist(
+      typedEditor.kind === "edit"
+        ? current.map((group) => (group.id === typedEditor.group.id ? { ...group, ...typed } : group))
+        : [...current, { id: newId(), ...typed }],
+    );
+    setTypedEditor({ kind: "closed" });
   };
 
   if (loadProblem) {
@@ -197,17 +253,15 @@ export function App({ store, requestReview, newId, pullRequest }: AppProps) {
         )}
       </header>
 
-      {groups === null ? null : groups.length === 0 && editor.kind === "closed" ? (
-        <p className="empty">No groups yet.</p>
-      ) : (
-        <ul className="cards">
+      {groups !== null && groups.length > 0 && (
+        <ul className="cards" aria-label="Groups">
           {groups.map((group) =>
-            editor.kind === "edit" && editor.group.id === group.id ? (
+            typedEditor.kind === "edit" && typedEditor.group.id === group.id ? (
               <li key={group.id} className="card card-editing">
                 <GroupForm
                   initial={group}
-                  onSave={(draft) => void saveDraft(draft)}
-                  onCancel={() => setEditor({ kind: "closed" })}
+                  onSave={saveTypedGroup}
+                  onCancel={() => setTypedEditor({ kind: "closed" })}
                 />
               </li>
             ) : (
@@ -215,14 +269,19 @@ export function App({ store, requestReview, newId, pullRequest }: AppProps) {
                 key={group.id}
                 group={group}
                 canRequest={pullRequest !== null}
-                busy={busyGroupId === group.id}
-                onRequest={() => void request(group)}
-                onEdit={() => setEditor({ kind: "edit", group })}
-                onDelete={() => void persist(groups.filter((other) => other.id !== group.id))}
+                busy={busy === group.id}
+                editing={editingGroup?.id === group.id}
+                onRequest={() => void requestFrom(group.id, group.members)}
+                onEdit={() => startEdit(group)}
+                onDelete={() => deleteGroup(group)}
               />
             ),
           )}
         </ul>
+      )}
+
+      {groups !== null && groups.length === 0 && !pickerReady && typedEditor.kind === "closed" && (
+        <p className="empty">No groups yet.</p>
       )}
 
       {status && (
@@ -231,19 +290,48 @@ export function App({ store, requestReview, newId, pullRequest }: AppProps) {
         </p>
       )}
 
-      {editor.kind === "new" ? (
-        <div className="card card-editing">
-          <GroupForm
-            initial={{ name: "", members: [] }}
-            onSave={(draft) => void saveDraft(draft)}
-            onCancel={() => setEditor({ kind: "closed" })}
-          />
-        </div>
-      ) : (
-        <button type="button" className="btn btn-block" onClick={() => setEditor({ kind: "new" })}>
-          New group
-        </button>
+      {reviewers.state === "loading" && <p className="hint">Reading reviewers from the pull request…</p>}
+      {reviewers.state === "failed" && (
+        <p className="problem" role="alert">
+          {reviewers.error}
+        </p>
       )}
+
+      {reviewers.state === "ready" && (
+        <>
+          <PeoplePicker
+            candidates={reviewers.candidates}
+            selection={draft.selection}
+            onToggle={(login) => updateDraft({ ...draft, selection: toggleLogin(draft.selection, login) })}
+          />
+          <SelectionBar
+            key={draft.editingGroupId ?? "new"}
+            draft={draft}
+            editingGroup={editingGroup}
+            busy={busy === SELECTION_BUSY}
+            onRequest={() => void requestSelection()}
+            onSaveAsGroup={saveAsGroup}
+            onSaveChanges={saveChanges}
+            onCancelEdit={() => updateDraft(EMPTY_DRAFT)}
+          />
+        </>
+      )}
+
+      {!pickerReady &&
+        reviewers.state !== "loading" &&
+        (typedEditor.kind === "new" ? (
+          <div className="card card-editing">
+            <GroupForm
+              initial={{ name: "", members: [] }}
+              onSave={saveTypedGroup}
+              onCancel={() => setTypedEditor({ kind: "closed" })}
+            />
+          </div>
+        ) : (
+          <button type="button" className="btn btn-block" onClick={() => setTypedEditor({ kind: "new" })}>
+            New group
+          </button>
+        ))}
     </main>
   );
 }

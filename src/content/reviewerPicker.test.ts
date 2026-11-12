@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ReviewerOptionsTimeoutError, ReviewerPickerMissingError, requestReviewFrom } from "./reviewerPicker";
+import {
+  readReviewerCandidates,
+  ReviewerOptionsTimeoutError,
+  ReviewerPickerMissingError,
+  requestReviewFrom,
+} from "./reviewerPicker";
 import { mountReviewerSidebar, type Candidate } from "./testing/reviewerSidebarFixture";
 
 const toggleSettles = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -93,5 +98,49 @@ describe("requestReviewFrom", () => {
 
     expect(fixture.details.open).toBe(false);
     expect(fixture.savedSelections).toEqual([[]]);
+  });
+});
+
+describe("readReviewerCandidates", () => {
+  it("lists everyone the picker offers and closes it with the selection unchanged", async () => {
+    const fixture = mountReviewerSidebar(document, [
+      {
+        login: "mona",
+        id: 101,
+        description: "Mona Lisa",
+        avatarUrl: "https://avatars.githubusercontent.com/u/101",
+      },
+      { login: "octocat", id: 103, requested: true },
+      {
+        login: "acme/backend",
+        id: 900,
+        team: true,
+        description: "API owners",
+        avatarUrl: "https://avatars.githubusercontent.com/t/900",
+      },
+    ]);
+
+    const candidates = await readReviewerCandidates(document, { timeoutMs: 500 });
+    await toggleSettles();
+
+    expect(candidates).toEqual([
+      {
+        login: "mona",
+        description: "Mona Lisa",
+        avatarUrl: "https://avatars.githubusercontent.com/u/101",
+        team: false,
+        requested: false,
+      },
+      { login: "octocat", description: "", avatarUrl: null, team: false, requested: true },
+      {
+        login: "acme/backend",
+        description: "API owners",
+        avatarUrl: "https://avatars.githubusercontent.com/t/900",
+        team: true,
+        requested: false,
+      },
+    ]);
+    expect(fixture.details.open).toBe(false);
+    expect(fixture.savedSelections).toEqual([["octocat"]]);
   });
 });

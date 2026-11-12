@@ -3,6 +3,8 @@ export interface Candidate {
   id: number;
   requested?: boolean;
   team?: boolean;
+  description?: string;
+  avatarUrl?: string;
 }
 
 export interface ReviewerSidebarFixture {
@@ -21,10 +23,17 @@ const buildOption = (doc: Document, candidate: Candidate): HTMLLabelElement => {
   input.name = candidate.team ? "reviewer_team_ids[]" : "reviewer_user_ids[]";
   input.value = String(candidate.id);
   input.checked = candidate.requested ?? false;
+  const avatar = doc.createElement("img");
+  avatar.className = "avatar-small";
+  if (candidate.avatarUrl === undefined) avatar.hidden = true;
+  else avatar.src = candidate.avatarUrl;
   const username = doc.createElement("span");
   username.className = "js-username";
   username.textContent = candidate.login;
-  label.append(input, username);
+  const description = doc.createElement("span");
+  description.className = "description js-description";
+  description.textContent = candidate.description ?? "";
+  label.append(input, avatar, username, description);
   return label;
 };
 

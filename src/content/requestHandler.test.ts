@@ -32,6 +32,24 @@ describe("handleExtensionMessage", () => {
     });
   });
 
+  it("lists the reviewers the picker offers for a list-reviewers message", async () => {
+    mountReviewerSidebar(document, [{ login: "mona", id: 101, description: "Mona Lisa" }]);
+
+    expect(await handleExtensionMessage(document, { type: "list-reviewers" })).toEqual({
+      ok: true,
+      candidates: [
+        { login: "mona", description: "Mona Lisa", avatarUrl: null, team: false, requested: false },
+      ],
+    });
+  });
+
+  it("answers a list-reviewers message with the reason when the tab has no Reviewers picker", async () => {
+    expect(await handleExtensionMessage(document, { type: "list-reviewers" })).toEqual({
+      ok: false,
+      error: "This page has no Reviewers picker. Open the pull request's Conversation tab.",
+    });
+  });
+
   it("ignores a message meant for something else", async () => {
     expect(await handleExtensionMessage(document, { type: "ping" })).toBeUndefined();
   });

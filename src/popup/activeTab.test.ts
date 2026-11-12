@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describePullRequest, parseReply } from "./activeTab";
+import { describePullRequest, parseCandidatesReply, parseReply } from "./activeTab";
 
 describe("describePullRequest", () => {
   it("names the repository and number of a pull request page", () => {
@@ -36,5 +36,49 @@ describe("parseReply", () => {
 
   it("turns anything else into a failure the popup can show", () => {
     expect(parseReply(undefined)).toEqual({ ok: false, error: "The page sent back an unexpected answer." });
+  });
+});
+
+describe("parseCandidatesReply", () => {
+  const mona = {
+    login: "mona",
+    description: "Mona Lisa",
+    avatarUrl: "https://avatars.githubusercontent.com/u/101?v=4",
+    team: false,
+    requested: false,
+  };
+
+  it("accepts the reviewer list the page read", () => {
+    expect(parseCandidatesReply({ ok: true, candidates: [mona] })).toEqual({ ok: true, candidates: [mona] });
+  });
+
+  it("drops an avatar served from anywhere but GitHub's avatar host", () => {
+    expect(
+      parseCandidatesReply({
+        ok: true,
+        candidates: [{ ...mona, avatarUrl: "https://tracker.test/pixel.png" }],
+      }),
+    ).toEqual({ ok: true, candidates: [{ ...mona, avatarUrl: null }] });
+  });
+
+  it("drops a candidate whose login is not a GitHub login", () => {
+    expect(parseCandidatesReply({ ok: true, candidates: [mona, { ...mona, login: "<img>" }] })).toEqual({
+      ok: true,
+      candidates: [mona],
+    });
+  });
+
+  it("passes on a failure the page reported", () => {
+    expect(parseCandidatesReply({ ok: false, error: "No picker." })).toEqual({
+      ok: false,
+      error: "No picker.",
+    });
+  });
+
+  it("turns anything else into a failure the popup can show", () => {
+    expect(parseCandidatesReply("nonsense")).toEqual({
+      ok: false,
+      error: "The page sent back an unexpected answer.",
+    });
   });
 });

@@ -3,6 +3,7 @@
   "name": "Reviewer Groups",
   "version": "0.1.0",
   "description": "Save groups of GitHub reviewers and request review from a whole group in two clicks.",
+  "minimum_chrome_version": "126",
   "permissions": ["storage", "activeTab", "scripting"],
   "action": {
     "default_title": "Reviewer Groups",

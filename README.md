@@ -39,11 +39,11 @@ Merging to `main` keeps a release pull request open: [release-please](https://gi
 
 The publish job needs, in the repository settings:
 
-| Name | Kind | What it is |
-| --- | --- | --- |
-| `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY` | secrets | A GitHub App installed on this repository, so the release pull request it opens runs CI and the release it publishes starts the publish workflow |
-| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | secrets | A Google OAuth client with the Chrome Web Store API enabled, and a refresh token for the store's developer account; the OAuth app's publishing status must be "In production", since a refresh token from an app in "Testing" stops working after 7 days |
-| `CWS_EXTENSION_ID`, `CWS_PUBLISHER_ID` | variables | The store item's ID, and the developer account's publisher ID from the dashboard's Account page |
+| Name                                                      | Kind      | What it is                                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`               | secrets   | A GitHub App installed on this repository, so the release pull request it opens runs CI and the release it publishes starts the publish workflow                                                                                                         |
+| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | secrets   | A Google OAuth client with the Chrome Web Store API enabled, and a refresh token for the store's developer account; the OAuth app's publishing status must be "In production", since a refresh token from an app in "Testing" stops working after 7 days |
+| `CWS_EXTENSION_ID`, `CWS_PUBLISHER_ID`                    | variables | The store item's ID, and the developer account's publisher ID from the dashboard's Account page                                                                                                                                                          |
 
 When a step fails, re-run the publish job, or start it by hand from the Actions tab with the release tag. Store screenshots, the promo tile and the listing text are not part of the package; they change only in the developer dashboard, from `docs/store-listing.md` and `docs/screenshots/`.
 

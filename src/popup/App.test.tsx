@@ -19,6 +19,7 @@ const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): R
   team: false,
   requested: false,
   available: true,
+  reviewState: null,
   ...overrides,
 });
 
@@ -355,6 +356,30 @@ describe("App on a pull request", () => {
       await Promise.resolve();
     });
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Request Frontend" }).disabled).toBe(false);
+  });
+
+  it("shows the review each person already left, apart from people still requested", async () => {
+    renderApp({
+      candidates: {
+        ok: true,
+        candidates: [
+          candidate("mona", { reviewState: "approved" }),
+          candidate("hubot", { reviewState: "changesRequested" }),
+          candidate("spacecat", { reviewState: "commented" }),
+          candidate("octocat", { requested: true }),
+        ],
+      },
+    });
+
+    const badges = async (login: string) =>
+      within(await screen.findByRole("listitem", { name: login }))
+        .queryAllByText(/approved|changes requested|commented|requested/)
+        .map((badge) => badge.textContent);
+
+    expect(await badges("mona")).toEqual(["approved"]);
+    expect(await badges("hubot")).toEqual(["changes requested"]);
+    expect(await badges("spacecat")).toEqual(["commented"]);
+    expect(await badges("octocat")).toEqual(["requested"]);
   });
 
   it("marks people GitHub says cannot review and does not let them be ticked", async () => {

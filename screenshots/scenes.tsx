@@ -50,6 +50,7 @@ const toCandidate = (person: Person): ReviewerCandidate => ({
   description: person.name,
   avatarUrl: avatarFor(person),
   available: true,
+  reviewState: null,
   team: person.team ?? false,
   requested: person.requested ?? false,
 });

@@ -2,9 +2,12 @@ import * as z from "zod/mini";
 
 const REVIEWER_FORM = 'form[action$="/review-requests"]';
 const SIDEBAR_ITEM = ".discussion-sidebar-item";
+const REVIEWER_ROW = "div.d-flex.flex-items-center";
 const USER_FIELD = "reviewer_user_ids[]";
 const TEAM_FIELD = "reviewer_team_ids[]";
 const PULL_REQUEST_PATH = /^\/[^/]+\/[^/]+\/pull\/\d+(?=\/|$)/;
+
+export type ReviewState = "approved" | "changesRequested" | "commented";
 
 export interface ReviewerCandidate {
   login: string;
@@ -13,6 +16,7 @@ export interface ReviewerCandidate {
   team: boolean;
   requested: boolean;
   available: boolean;
+  reviewState: ReviewState | null;
 }
 
 export interface ReviewRequestOutcome {
@@ -116,19 +120,51 @@ const searchReviewers = async ({ doc, fetch }: GitHubPage, query: string): Promi
 
 const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-const describeEntry = ({ login, type, selected, disabled, avatar, name, description }: ReviewerEntry) => ({
+const REVIEW_STATE_TOOLTIPS: [RegExp, ReviewState][] = [
+  [/approved these changes/i, "approved"],
+  [/requested changes/i, "changesRequested"],
+  [/left review comments/i, "commented"],
+];
+
+const reviewStateOf = (row: Element): ReviewState | undefined => {
+  const tooltips = [...row.querySelectorAll("tool-tip")].map((tooltip) => tooltip.textContent ?? "");
+  return REVIEW_STATE_TOOLTIPS.find(([pattern]) => tooltips.some((text) => pattern.test(text)))?.[1];
+};
+
+const readReviewStates = (doc: Document): Map<string, ReviewState> => {
+  const states = new Map<string, ReviewState>();
+  const sidebar = doc.querySelector(REVIEWER_FORM)?.closest(SIDEBAR_ITEM);
+  for (const row of sidebar?.querySelectorAll(REVIEWER_ROW) ?? []) {
+    const login = [...row.querySelectorAll("a")]
+      .map((link) => link.textContent?.trim() ?? "")
+      .find((text) => text.length > 0);
+    const state = reviewStateOf(row);
+    if (login !== undefined && state !== undefined) states.set(login.toLowerCase(), state);
+  }
+  return states;
+};
+
+const describeEntry = (
+  { login, type, selected, disabled, avatar, name, description }: ReviewerEntry,
+  reviewStates: Map<string, ReviewState>,
+): ReviewerCandidate => ({
   login,
   description: typeof name === "string" && name.length > 0 ? name : (description ?? ""),
   avatarUrl: avatar ?? null,
   team: type === "team",
   requested: selected,
   available: !(disabled ?? false),
+  reviewState: reviewStates.get(login.toLowerCase()) ?? null,
 });
 
 export const searchReviewerCandidates = async (
   page: GitHubPage,
   query: string,
-): Promise<ReviewerCandidate[]> => (await searchReviewers(page, query)).map(describeEntry);
+): Promise<ReviewerCandidate[]> => {
+  const entries = await searchReviewers(page, query);
+  const reviewStates = readReviewStates(page.doc);
+  return entries.map((entry) => describeEntry(entry, reviewStates));
+};
 
 const lookUpMember = async (page: GitHubPage, member: string) => ({
   member,

@@ -46,6 +46,7 @@ const candidateSchema = z.object({
   team: z.boolean(),
   requested: z.boolean(),
   available: z.boolean(),
+  reviewState: z.nullable(z.enum(["approved", "changesRequested", "commented"])),
 });
 
 export const describePullRequest = (url: string | undefined): string | null => {

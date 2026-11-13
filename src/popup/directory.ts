@@ -80,4 +80,4 @@ export const rememberedPerson = (directory: Directory, login: string): Remembere
 export const rememberedPeople = (directory: Directory): ReviewerCandidate[] =>
   Object.values(directory.people)
     .sort((a, b) => a.login.localeCompare(b.login, undefined, { sensitivity: "base" }))
-    .map((person) => ({ ...person, requested: false, available: true }));
+    .map((person) => ({ ...person, requested: false, available: true, reviewState: null }));

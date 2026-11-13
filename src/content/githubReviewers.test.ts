@@ -266,6 +266,60 @@ describe("requestReviewFrom", () => {
   });
 });
 
+describe("searchReviewerCandidates review states", () => {
+  it("adds the review each person already left, read from the page's Reviewers box", async () => {
+    mountPullRequestPage(document, {
+      reviewerRows: [
+        { login: "mona", tooltips: ["mona approved these changes"] },
+        { login: "hubot", tooltips: ["hubot requested changes", "Re-request review"] },
+        { login: "octocat", tooltips: ["Awaiting requested review from octocat"] },
+        {
+          login: "monalisa-bot",
+          tooltips: ["monalisa-bot left review comments", "Re-request review"],
+          menuIcons: 3,
+        },
+      ],
+    });
+    const github = createFakeGitHub([
+      { id: 101, login: "mona" },
+      { id: 102, login: "hubot" },
+      { id: 103, login: "octocat", selected: true },
+      { id: 104, login: "monalisa-bot" },
+      { id: 105, login: "away-person" },
+    ]);
+
+    const found = await searchReviewerCandidates({ doc: document, fetch: github.fetch }, "");
+
+    expect(found.map(({ login, reviewState }) => [login, reviewState])).toEqual([
+      ["mona", "approved"],
+      ["hubot", "changesRequested"],
+      ["octocat", null],
+      ["monalisa-bot", "commented"],
+      ["away-person", null],
+    ]);
+  });
+
+  it("matches a reviewer row to a login regardless of letter case", async () => {
+    mountPullRequestPage(document, {
+      reviewerRows: [{ login: "Mona", tooltips: ["Mona approved these changes"] }],
+    });
+    const github = createFakeGitHub([{ id: 101, login: "mona" }]);
+
+    const [mona] = await searchReviewerCandidates({ doc: document, fetch: github.fetch }, "");
+
+    expect(mona?.reviewState).toBe("approved");
+  });
+
+  it("leaves review states empty on a tab without the Reviewers box", async () => {
+    mountPullRequestPage(document, { tab: "/files", withForm: false });
+    const github = createFakeGitHub([{ id: 101, login: "mona" }]);
+
+    const [mona] = await searchReviewerCandidates({ doc: document, fetch: github.fetch }, "");
+
+    expect(mona?.reviewState).toBeNull();
+  });
+});
+
 describe("searchReviewerCandidates", () => {
   it("lists the people and teams GitHub offers, from any tab of the pull request", async () => {
     mountPullRequestPage(document, { tab: "/files", withForm: false });
@@ -281,6 +335,7 @@ describe("searchReviewerCandidates", () => {
         team: false,
         requested: false,
         available: true,
+        reviewState: null,
       },
       {
         login: "hubot",
@@ -289,6 +344,7 @@ describe("searchReviewerCandidates", () => {
         team: false,
         requested: false,
         available: true,
+        reviewState: null,
       },
       {
         login: "octocat",
@@ -297,6 +353,7 @@ describe("searchReviewerCandidates", () => {
         team: false,
         requested: true,
         available: true,
+        reviewState: null,
       },
       {
         login: "monalisa-bot",
@@ -305,6 +362,7 @@ describe("searchReviewerCandidates", () => {
         team: false,
         requested: false,
         available: true,
+        reviewState: null,
       },
       {
         login: "away-person",
@@ -313,6 +371,7 @@ describe("searchReviewerCandidates", () => {
         team: false,
         requested: false,
         available: false,
+        reviewState: null,
       },
     ]);
     expect(github.fetch).toHaveBeenCalledWith(
@@ -339,6 +398,7 @@ describe("searchReviewerCandidates", () => {
         team: false,
         requested: false,
         available: true,
+        reviewState: null,
       },
     ]);
   });
@@ -350,7 +410,15 @@ describe("searchReviewerCandidates", () => {
     });
 
     expect(await searchReviewerCandidates({ doc: document, fetch: github.fetch }, "")).toEqual([
-      { login: "hubot", description: "", avatarUrl: null, team: false, requested: false, available: true },
+      {
+        login: "hubot",
+        description: "",
+        avatarUrl: null,
+        team: false,
+        requested: false,
+        available: true,
+        reviewState: null,
+      },
     ]);
   });
 

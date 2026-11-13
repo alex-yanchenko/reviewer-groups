@@ -14,6 +14,7 @@ const shots = [
   { scene: "search", width: 1280, height: 800 },
   { scene: "save", width: 1280, height: 800 },
   { scene: "promo", width: 440, height: 280 },
+  { scene: "social", width: 1280, height: 640 },
 ];
 
 await build({

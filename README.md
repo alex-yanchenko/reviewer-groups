@@ -35,7 +35,7 @@ Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpack
 
 ## Release
 
-Merging to `main` keeps a release pull request open: [release-please](https://github.com/googleapis/release-please) bumps the version in `package.json` and `manifest.json` and writes `CHANGELOG.md` from the Conventional Commit titles. Merging that pull request tags `vX.Y.Z` and publishes the GitHub release, which starts `.github/workflows/publish.yml`: it checks the tag against `manifest.json`, runs `pnpm check`, attaches `reviewer-groups-X.Y.Z.zip` to the release, and uploads the same zip to the Chrome Web Store and submits it for review. Google publishes it once the review passes.
+A merge to `main` with a `feat`, `fix`, `perf` or `revert` commit opens or updates a release pull request; other commit types never start a release. In it, [release-please](https://github.com/googleapis/release-please) bumps the version in `package.json` and `manifest.json` and writes `CHANGELOG.md` from the Conventional Commit titles. Merging that pull request tags `vX.Y.Z` and publishes the GitHub release, which starts `.github/workflows/publish.yml`: it checks the tag against `manifest.json`, runs `pnpm check`, attaches `reviewer-groups-X.Y.Z.zip` to the release, and uploads the same zip to the Chrome Web Store and submits it for review. Google publishes it once the review passes.
 
 The publish job needs, in the repository settings:
 
@@ -45,7 +45,7 @@ The publish job needs, in the repository settings:
 | `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | secrets   | A Google OAuth client with the Chrome Web Store API enabled, and a refresh token for the store's developer account; the OAuth app's publishing status must be "In production", since a refresh token from an app in "Testing" stops working after 7 days |
 | `CWS_EXTENSION_ID`, `CWS_PUBLISHER_ID`                    | variables | The store item's ID, and the developer account's publisher ID from the dashboard's Account page                                                                                                                                                          |
 
-When a step fails, re-run the publish job, or start it by hand from the Actions tab with the release tag. Store screenshots, the promo tile and the listing text are not part of the package; they change only in the developer dashboard, from `docs/store-listing.md` and `docs/screenshots/`.
+When a step before the store upload fails, re-run the publish job, or start it by hand from the Actions tab with the release tag. When the upload went through and only the submission failed, the store already holds that version and refuses a second upload of it: submit it for review in the developer dashboard. `CHANGELOG.md` and `manifest.json` are outside Prettier, because release-please rewrites both in a shape Prettier rejects. Store screenshots, the promo tile and the listing text are not part of the package; they change only in the developer dashboard, from `docs/store-listing.md` and `docs/screenshots/`.
 
 ## Limits
 

@@ -33,6 +33,20 @@ pnpm screenshots    # regenerates docs/screenshots with invented people (needs G
 
 Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick the `dist/` folder.
 
+## Release
+
+Merging to `main` keeps a release pull request open: [release-please](https://github.com/googleapis/release-please) bumps the version in `package.json` and `manifest.json` and writes `CHANGELOG.md` from the Conventional Commit titles. Merging that pull request tags `vX.Y.Z` and publishes the GitHub release, which starts `.github/workflows/publish.yml`: it checks the tag against `manifest.json`, runs `pnpm check`, attaches `reviewer-groups-X.Y.Z.zip` to the release, and uploads the same zip to the Chrome Web Store and submits it for review. Google publishes it once the review passes.
+
+The publish job needs, in the repository settings:
+
+| Name | Kind | What it is |
+| --- | --- | --- |
+| `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY` | secrets | A GitHub App installed on this repository, so the release pull request it opens runs CI and the release it publishes starts the publish workflow |
+| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | secrets | A Google OAuth client with the Chrome Web Store API enabled, and a refresh token for the store's developer account; the OAuth app's publishing status must be "In production", since a refresh token from an app in "Testing" stops working after 7 days |
+| `CWS_EXTENSION_ID`, `CWS_PUBLISHER_ID` | variables | The store item's ID, and the developer account's publisher ID from the dashboard's Account page |
+
+When a step fails, re-run the publish job, or start it by hand from the Actions tab with the release tag. Store screenshots, the promo tile and the listing text are not part of the package; they change only in the developer dashboard, from `docs/store-listing.md` and `docs/screenshots/`.
+
 ## Limits
 
 - Both endpoints are GitHub internals, not a public API, and can change without notice. Everything that touches them is in `src/content/githubReviewers.ts`; `src/content/testing/fakeGitHub.ts` is the behaviour the tests assume.

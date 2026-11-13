@@ -53,6 +53,31 @@ body {
   max-height: 580px;
 }
 
+body.social {
+  height: 640px;
+}
+
+body.social .stage {
+  height: 640px;
+  gap: 64px;
+}
+
+body.social .pitch h1 {
+  font-size: 56px;
+}
+
+body.social .pitch .repo {
+  margin-top: 28px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 16px;
+  color: #1f883d;
+}
+
+body.social .window {
+  zoom: 1.1;
+  max-height: 520px;
+}
+
 body.promo,
 body.promo html {
   width: 440px;

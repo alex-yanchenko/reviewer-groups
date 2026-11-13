@@ -1,7 +1,7 @@
 import pWaitFor from "p-wait-for";
 import { createRoot } from "react-dom/client";
 import type { Group } from "../src/groups/group";
-import type { ListReviewersReply, RequestReviewReply, ReviewerCandidate } from "../src/messages";
+import type { ListReviewersReply, RequestReviewReply, ReviewerCandidate, ReviewState } from "../src/messages";
 import { App } from "../src/popup/App";
 import { EMPTY_DIRECTORY } from "../src/popup/directory";
 import type { Draft } from "../src/popup/draft";
@@ -14,6 +14,7 @@ interface Person {
   color: string;
   team?: boolean;
   requested?: boolean;
+  review?: ReviewState;
 }
 
 const avatarFor = ({ name, color, team }: Person): string => {
@@ -33,7 +34,7 @@ const avatarFor = ({ name, color, team }: Person): string => {
 const suggested: Person[] = [
   { login: "river-chen", name: "River Chen", color: "#2f81f7" },
   { login: "priya-nair", name: "Priya Nair", color: "#bf3989" },
-  { login: "sam-okafor", name: "Sam Okafor", color: "#1a7f37" },
+  { login: "sam-okafor", name: "Sam Okafor", color: "#1a7f37", review: "approved" },
   { login: "leo-martins", name: "Leo Martins", color: "#9a6700", requested: true },
   { login: "noor-haddad", name: "Noor Haddad", color: "#8250df" },
   { login: "northwind/frontend", name: "Frontend guild", color: "#0969da", team: true },
@@ -50,7 +51,7 @@ const toCandidate = (person: Person): ReviewerCandidate => ({
   description: person.name,
   avatarUrl: avatarFor(person),
   available: true,
-  reviewState: null,
+  reviewState: person.review ?? null,
   team: person.team ?? false,
   requested: person.requested ?? false,
 });
@@ -131,16 +132,18 @@ const waitForInput = async (label: string): Promise<HTMLInputElement> => {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
 
-const scenes: Record<string, Scene> = {
-  pick: {
-    title: "Tick reviewers. Request them all at once.",
-    caption: "Open it on a pull request: everyone GitHub lets you request is listed, teams included.",
-    groups: [],
-    draft: { selection: ["river-chen", "priya-nair", "northwind/frontend"], editingGroupId: null },
-    play: async () => {
-      await waitForButton("Request 3");
-    },
+const pickScene: Scene = {
+  title: "Tick reviewers. Request them all at once.",
+  caption: "Open it on a pull request: everyone GitHub lets you request is listed, teams included.",
+  groups: [],
+  draft: { selection: ["river-chen", "priya-nair", "northwind/frontend"], editingGroupId: null },
+  play: async () => {
+    await waitForButton("Request 3");
   },
+};
+
+const scenes: Record<string, Scene> = {
+  pick: pickScene,
   groups: {
     title: "Save a group. Request it in two clicks.",
     caption: "Click the icon, click the group. Requests go through GitHub's own Reviewers menu.",
@@ -187,13 +190,21 @@ const renderPromo = (root: HTMLElement) => {
   document.body.dataset.ready = "true";
 };
 
-const renderScene = async (root: HTMLElement, scene: Scene) => {
+const socialScene: Scene = {
+  ...pickScene,
+  title: "Reviewer Groups",
+  caption: "Request GitHub pull request reviews from several people at once. No token, no setup.",
+};
+
+const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "social") => {
+  document.body.classList.add(layout);
   createRoot(root).render(
     <div className="stage">
       <section className="pitch">
         <img src="../icons/icon-128.png" alt="" width={72} height={72} />
         <h1>{scene.title}</h1>
         <p>{scene.caption}</p>
+        {layout === "social" && <p className="repo">github.com/alex-yanchenko/reviewer-groups</p>}
       </section>
       <section className="window">
         <App
@@ -221,4 +232,5 @@ const root = document.getElementById("root");
 const sceneName = location.hash.slice(1);
 const scene = scenes[sceneName];
 if (root !== null && sceneName === "promo") renderPromo(root);
-else if (root !== null && scene !== undefined) void renderScene(root, scene);
+else if (root !== null && sceneName === "social") void renderScene(root, socialScene, "social");
+else if (root !== null && scene !== undefined) void renderScene(root, scene, "store");

@@ -1,3 +1,4 @@
+import type { ReviewState } from "../messages";
 import { GitHubAnswerError, type GitHubPage } from "./githubPage";
 
 const REVIEWER_FORM = 'form[action$="/review-requests"]';
@@ -7,8 +8,6 @@ const SIGNED_IN_LOGIN = 'meta[name="user-login"]';
 const PULL_REQUEST_PATH = /^\/[^/]+\/[^/]+\/pull\/\d+(?=\/|$)/;
 const SIGN_IN_FORM = 'form[action="/session"]';
 const LOGIN_PATHS: ReadonlySet<string> = new Set(["/login", "/session"]);
-
-export type ReviewState = "approved" | "changesRequested" | "commented";
 
 export class PullRequestPageMissingError extends Error {
   override readonly name = "PullRequestPageMissingError";

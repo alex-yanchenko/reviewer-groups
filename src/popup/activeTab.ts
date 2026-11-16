@@ -1,11 +1,15 @@
-import * as z from "zod/mini";
-import { memberSchema } from "../groups/group";
+import type * as z from "zod/mini";
 import {
   COUNT_OPEN_REQUESTS,
+  countOpenRequestsReplySchema,
   LIST_REVIEWERS,
+  listReviewersReplySchema,
   LOOK_UP_GROUP,
+  lookUpGroupReplySchema,
   REMOVE_REVIEWERS,
+  removeReviewersReplySchema,
   REQUEST_REVIEW,
+  requestReviewReplySchema,
   type CountOpenRequestsMessage,
   type CountOpenRequestsReply,
   type ListReviewersMessage,
@@ -16,10 +20,7 @@ import {
   type RemoveReviewersReply,
   type RequestReviewMessage,
   type RequestReviewReply,
-  type ReviewedPerson,
-  type ReviewerCandidate,
 } from "../messages";
-import { trustedAvatarUrl } from "./avatar";
 
 const PULL_REQUEST_URL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)(?:[/?#]|$)/;
 
@@ -27,120 +28,27 @@ const PICKER_SCRIPT = "picker.js";
 
 const UNEXPECTED_ANSWER = { ok: false, error: "The page sent back an unexpected answer." } as const;
 
-const failureSchema = z.object({ ok: z.literal(false), error: z.string() });
+const COUNTS_UNAVAILABLE = { ok: false, error: "Counts unavailable.", limited: false } as const;
 
-const replySchema = z.discriminatedUnion("ok", [
-  z.object({
-    ok: z.literal(true),
-    outcome: z.object({
-      added: z.array(z.string()),
-      alreadyRequested: z.array(z.string()),
-      unavailable: z.array(z.string()),
-      notFound: z.array(z.string()),
-      unconfirmed: z.array(z.string()),
-      dropped: z.array(z.string()),
-      gone: z.array(z.string()),
-    }),
-  }),
-  failureSchema,
-]);
-
-const candidatesReplySchema = z.discriminatedUnion("ok", [
-  z.object({
-    ok: z.literal(true),
-    candidates: z.array(z.unknown()),
-    reviewed: z.optional(z.array(z.unknown())),
-  }),
-  failureSchema,
-]);
-
-const reviewStateSchema = z.enum(["approved", "changesRequested", "commented"]);
-
-const candidateSchema = z.object({
-  login: memberSchema,
-  description: z.string(),
-  avatarUrl: z.nullable(z.string()),
-  team: z.boolean(),
-  requested: z.boolean(),
-  available: z.boolean(),
-  reviewState: z.nullable(reviewStateSchema),
-});
-
-const reviewedPersonSchema = z.object({
-  login: memberSchema,
-  reviewState: reviewStateSchema,
-  requested: z.boolean(),
-});
-
-const parseReviewedPerson = (raw: unknown): ReviewedPerson[] => {
-  const result = reviewedPersonSchema.safeParse(raw);
-  return result.success ? [result.data] : [];
-};
+const parseOr =
+  <Reply>(schema: z.ZodMiniType<Reply>, fallback: Reply) =>
+  (raw: unknown): Reply => {
+    const result = schema.safeParse(raw);
+    return result.success ? result.data : fallback;
+  };
 
 export const describePullRequest = (url: string | undefined): string | null => {
   const match = url === undefined ? null : PULL_REQUEST_URL.exec(url);
   return match ? `${match[1]}#${match[2]}` : null;
 };
 
-export const parseReply = (raw: unknown): RequestReviewReply => {
-  const result = replySchema.safeParse(raw);
-  return result.success ? result.data : UNEXPECTED_ANSWER;
-};
+export const parseReply = parseOr<RequestReviewReply>(requestReviewReplySchema, UNEXPECTED_ANSWER);
 
-const parseCandidate = (raw: unknown): ReviewerCandidate[] => {
-  const result = candidateSchema.safeParse(raw);
-  return result.success ? [{ ...result.data, avatarUrl: trustedAvatarUrl(result.data.avatarUrl) }] : [];
-};
+export const parseCandidatesReply = parseOr<ListReviewersReply>(listReviewersReplySchema, UNEXPECTED_ANSWER);
 
-export const parseCandidatesReply = (raw: unknown): ListReviewersReply => {
-  const result = candidatesReplySchema.safeParse(raw);
-  if (!result.success) return UNEXPECTED_ANSWER;
-  if (!result.data.ok) return result.data;
-  const candidates = result.data.candidates.flatMap(parseCandidate);
-  if (result.data.candidates.length > 0 && candidates.length === 0) return UNEXPECTED_ANSWER;
-  return { ok: true, candidates, reviewed: (result.data.reviewed ?? []).flatMap(parseReviewedPerson) };
-};
+export const parseLookUpReply = parseOr<LookUpGroupReply>(lookUpGroupReplySchema, UNEXPECTED_ANSWER);
 
-const lookUpReplySchema = z.discriminatedUnion("ok", [
-  z.object({
-    ok: z.literal(true),
-    author: z.nullable(z.string()),
-    members: z.array(z.object({ member: memberSchema, candidate: z.nullable(candidateSchema) })),
-  }),
-  failureSchema,
-]);
-
-export const parseLookUpReply = (raw: unknown): LookUpGroupReply => {
-  const result = lookUpReplySchema.safeParse(raw);
-  if (!result.success) return UNEXPECTED_ANSWER;
-  if (!result.data.ok) return result.data;
-  return {
-    ...result.data,
-    members: result.data.members.map(({ member, candidate }) => ({
-      member,
-      candidate:
-        candidate === null ? null : { ...candidate, avatarUrl: trustedAvatarUrl(candidate.avatarUrl) },
-    })),
-  };
-};
-
-const removeReplySchema = z.discriminatedUnion("ok", [
-  z.object({
-    ok: z.literal(true),
-    outcome: z.object({
-      removed: z.array(z.string()),
-      notRequested: z.array(z.string()),
-      unconfirmed: z.array(z.string()),
-      dropped: z.array(z.string()),
-    }),
-  }),
-  failureSchema,
-]);
-
-export const parseRemoveReply = (raw: unknown): RemoveReviewersReply => {
-  const result = removeReplySchema.safeParse(raw);
-  return result.success ? result.data : UNEXPECTED_ANSWER;
-};
+export const parseRemoveReply = parseOr<RemoveReviewersReply>(removeReviewersReplySchema, UNEXPECTED_ANSWER);
 
 export interface ActiveTab {
   id: number;
@@ -180,15 +88,10 @@ export const requestReviewInTab = (
   return sendToPicker(id, message).then(parseReply, tabUnreachable);
 };
 
-const countReplySchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true), count: z.int().check(z.nonnegative()) }),
-  z.object({ ok: z.literal(false), error: z.string(), limited: z.boolean() }),
-]);
-
-export const parseCountReply = (raw: unknown): CountOpenRequestsReply => {
-  const result = countReplySchema.safeParse(raw);
-  return result.success ? result.data : { ok: false, error: "Counts unavailable.", limited: false };
-};
+export const parseCountReply = parseOr<CountOpenRequestsReply>(
+  countOpenRequestsReplySchema,
+  COUNTS_UNAVAILABLE,
+);
 
 export const removeReviewersInTab = (
   { id, session }: PopupTab,

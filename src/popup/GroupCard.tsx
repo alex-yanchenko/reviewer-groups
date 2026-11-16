@@ -1,4 +1,5 @@
 import type { Group } from "../groups/group";
+import { asksSome } from "./askGroup";
 
 function MemberList({ members, goneMembers }: { members: string[]; goneMembers: string[] }) {
   if (goneMembers.length === 0) return <span className="card-members">{members.join(", ")}</span>;
@@ -52,6 +53,7 @@ function MissingMembersNotice({
 
 export function GroupCard({
   group,
+  linked,
   goneMembers,
   canRequest,
   busy,
@@ -63,6 +65,7 @@ export function GroupCard({
   onRemoveMissing,
 }: {
   group: Group;
+  linked: boolean;
   goneMembers: string[];
   canRequest: boolean;
   busy: boolean;
@@ -76,8 +79,16 @@ export function GroupCard({
   return (
     <li className={editing ? "card card-editing" : "card"} aria-label={group.name}>
       <div className="card-text">
-        <strong className="card-name">{group.name}</strong>
+        <span className="card-title">
+          <strong className="card-name">{group.name}</strong>
+          {linked && <span className="badge badge-done">This repository</span>}
+        </span>
         <MemberList members={group.members} goneMembers={goneMembers} />
+        {asksSome(group) && (
+          <span className="card-members">
+            Asks {group.ask} of {group.members.length}, fewest open requests first
+          </span>
+        )}
         <MissingMembersNotice group={group} goneMembers={goneMembers} onRemoveMissing={onRemoveMissing} />
       </div>
       <div className="card-actions">

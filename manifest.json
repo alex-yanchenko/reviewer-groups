@@ -5,6 +5,10 @@
   "description": "Request GitHub pull request reviews from several people at once, and save them as groups.",
   "minimum_chrome_version": "126",
   "permissions": ["storage", "activeTab", "scripting"],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "action": {
     "default_title": "Reviewer Groups",
     "default_popup": "popup.html",

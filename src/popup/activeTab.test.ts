@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { describePullRequest, listReviewersInTab, parseCandidatesReply, parseReply } from "./activeTab";
+import {
+  describePullRequest,
+  listReviewersInTab,
+  parseCandidatesReply,
+  parseCountReply,
+  parseLookUpReply,
+  parseRemoveReply,
+  parseReply,
+} from "./activeTab";
 
 const emptyOutcome = {
   added: [],
@@ -7,6 +15,7 @@ const emptyOutcome = {
   unavailable: [],
   notFound: [],
   unconfirmed: [],
+  dropped: [],
   gone: [],
 };
 
@@ -34,7 +43,10 @@ describe("describePullRequest", () => {
 
 describe("parseReply", () => {
   it("accepts a successful reply from the page", () => {
-    const reply = { ok: true, outcome: { ...emptyOutcome, added: ["mona"], unconfirmed: ["hubot"] } };
+    const reply = {
+      ok: true,
+      outcome: { ...emptyOutcome, added: ["mona"], unconfirmed: ["hubot"], dropped: ["linus-qa"] },
+    };
 
     expect(parseReply(reply)).toEqual(reply);
   });
@@ -59,8 +71,28 @@ describe("parseCandidatesReply", () => {
     reviewState: "commented",
   };
 
-  it("accepts the reviewer list the page read", () => {
-    expect(parseCandidatesReply({ ok: true, candidates: [mona] })).toEqual({ ok: true, candidates: [mona] });
+  const grace = { login: "grace-ops", reviewState: "changesRequested", requested: false };
+
+  it("accepts the reviewer list the page read, with everyone who reviewed", () => {
+    expect(parseCandidatesReply({ ok: true, candidates: [mona], reviewed: [grace] })).toEqual({
+      ok: true,
+      candidates: [mona],
+      reviewed: [grace],
+    });
+  });
+
+  it("reads a reply without a reviewed list as nobody having reviewed", () => {
+    expect(parseCandidatesReply({ ok: true, candidates: [mona] })).toEqual({
+      ok: true,
+      candidates: [mona],
+      reviewed: [],
+    });
+  });
+
+  it("drops a reviewed entry whose login is not a GitHub login", () => {
+    expect(
+      parseCandidatesReply({ ok: true, candidates: [], reviewed: [grace, { ...grace, login: "<img>" }] }),
+    ).toEqual({ ok: true, candidates: [], reviewed: [grace] });
   });
 
   it("drops an avatar served from anywhere but GitHub's avatar host", () => {
@@ -68,14 +100,18 @@ describe("parseCandidatesReply", () => {
       parseCandidatesReply({
         ok: true,
         candidates: [{ ...mona, avatarUrl: "https://tracker.test/pixel.png" }],
+        reviewed: [],
       }),
-    ).toEqual({ ok: true, candidates: [{ ...mona, avatarUrl: null }] });
+    ).toEqual({ ok: true, candidates: [{ ...mona, avatarUrl: null }], reviewed: [] });
   });
 
   it("drops a candidate whose login is not a GitHub login", () => {
-    expect(parseCandidatesReply({ ok: true, candidates: [mona, { ...mona, login: "<img>" }] })).toEqual({
+    expect(
+      parseCandidatesReply({ ok: true, candidates: [mona, { ...mona, login: "<img>" }], reviewed: [] }),
+    ).toEqual({
       ok: true,
       candidates: [mona],
+      reviewed: [],
     });
   });
 
@@ -98,7 +134,92 @@ describe("parseCandidatesReply", () => {
   });
 });
 
+describe("parseLookUpReply", () => {
+  const ada = {
+    login: "ada-dev",
+    description: "",
+    avatarUrl: "https://avatars.githubusercontent.com/u/201",
+    team: false,
+    requested: false,
+    available: true,
+    reviewState: null,
+  };
+
+  it("accepts each member as the page found them, and the author", () => {
+    const reply = {
+      ok: true,
+      author: "author-dev",
+      members: [
+        { member: "ada-dev", candidate: ada },
+        { member: "stranger", candidate: null },
+      ],
+    };
+
+    expect(parseLookUpReply(reply)).toEqual(reply);
+  });
+
+  it("drops an avatar served from anywhere but GitHub's avatar host", () => {
+    expect(
+      parseLookUpReply({
+        ok: true,
+        author: null,
+        members: [{ member: "ada-dev", candidate: { ...ada, avatarUrl: "https://tracker.test/pixel.png" } }],
+      }),
+    ).toEqual({
+      ok: true,
+      author: null,
+      members: [{ member: "ada-dev", candidate: { ...ada, avatarUrl: null } }],
+    });
+  });
+
+  it("turns a member it cannot read into a failure the popup can show", () => {
+    expect(
+      parseLookUpReply({ ok: true, author: null, members: [{ member: "ada-dev", candidate: { login: 1 } }] }),
+    ).toEqual({ ok: false, error: "The page sent back an unexpected answer." });
+  });
+});
+
+describe("parseRemoveReply", () => {
+  it("accepts who the page removed", () => {
+    const reply = {
+      ok: true,
+      outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [], dropped: [] },
+    };
+
+    expect(parseRemoveReply(reply)).toEqual(reply);
+  });
+
+  it("turns anything else into a failure the popup can show", () => {
+    expect(parseRemoveReply({ ok: true, outcome: { removed: "ada-dev" } })).toEqual({
+      ok: false,
+      error: "The page sent back an unexpected answer.",
+    });
+  });
+});
+
+describe("parseCountReply", () => {
+  it("accepts a count from the page", () => {
+    expect(parseCountReply({ ok: true, count: 4 })).toEqual({ ok: true, count: 4 });
+  });
+
+  it("accepts a search limit the page reported", () => {
+    const limited = { ok: false, error: "GitHub is limiting searches; counts paused.", limited: true };
+
+    expect(parseCountReply(limited)).toEqual(limited);
+  });
+
+  it("turns anything else into counts being unavailable", () => {
+    expect(parseCountReply({ ok: true, count: -1 })).toEqual({
+      ok: false,
+      error: "Counts unavailable.",
+      limited: false,
+    });
+  });
+});
+
 describe("listReviewersInTab", () => {
+  const popupTab = { id: 7, session: "popup-1" };
+
   const stubChrome = (sendMessage: ReturnType<typeof vi.fn>) => {
     const executeScript = vi.fn().mockResolvedValue([]);
     vi.stubGlobal("chrome", { tabs: { sendMessage }, scripting: { executeScript } });
@@ -109,9 +230,9 @@ describe("listReviewersInTab", () => {
     const sendMessage = vi.fn().mockResolvedValueOnce({ ok: true, candidates: [] });
     const executeScript = stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(7, "mo")).toEqual({ ok: true, candidates: [] });
+    expect(await listReviewersInTab(popupTab, "mo")).toEqual({ ok: true, candidates: [], reviewed: [] });
     expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith(7, { type: "list-reviewers", query: "mo" });
+    expect(sendMessage).toHaveBeenCalledWith(7, { type: "list-reviewers", session: "popup-1", query: "mo" });
     expect(executeScript).not.toHaveBeenCalled();
   });
 
@@ -122,7 +243,7 @@ describe("listReviewersInTab", () => {
       .mockResolvedValueOnce({ ok: true, candidates: [] });
     const executeScript = stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(7, "")).toEqual({ ok: true, candidates: [] });
+    expect(await listReviewersInTab(popupTab, "")).toEqual({ ok: true, candidates: [], reviewed: [] });
     expect(executeScript).toHaveBeenCalledTimes(1);
     expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ["picker.js"] });
     expect(sendMessage).toHaveBeenCalledTimes(2);
@@ -132,7 +253,7 @@ describe("listReviewersInTab", () => {
     const sendMessage = vi.fn().mockRejectedValue(new Error("Receiving end does not exist."));
     stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(7, "")).toEqual({
+    expect(await listReviewersInTab(popupTab, "")).toEqual({
       ok: false,
       error:
         "Chrome could not reach this tab (Receiving end does not exist.). Reload the pull request and try again.",

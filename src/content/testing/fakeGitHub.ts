@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { ConversationCache, type GitHubPage } from "../githubPage";
 
 export interface FakePerson {
   id: number;
@@ -9,20 +10,40 @@ export interface FakePerson {
   selected?: boolean;
   disabled?: boolean;
   suggested?: boolean;
+  description?: string | null;
+}
+
+export interface FakeConversationPage {
+  status?: number;
+  signedIn?: boolean;
+  canRequest?: boolean;
+  unreadable?: boolean;
+  redirectedToLogin?: boolean;
+  reviewerRows?: ReviewerRow[];
+  formAction?: string;
+  author?: string;
 }
 
 export interface FakeGitHubOptions {
   postStatus?: number;
   postIgnored?: boolean;
+  dropsOnPost?: string[];
+  searchFiltersRequested?: boolean;
   searchAnswer?: unknown;
   missingAccounts?: string[];
   profileStatus?: number;
+  conversation?: FakeConversationPage;
+  openRequestCounts?: Record<string, number>;
+  searchStatus?: number;
+  searchBody?: string;
 }
 
 export interface FakeGitHub {
   fetch: ReturnType<typeof vi.fn<typeof fetch>>;
+  page: GitHubPage;
   posts: URLSearchParams[];
   profileChecks: string[];
+  conversationFetches: () => number;
   requestedLogins: () => string[];
 }
 
@@ -64,19 +85,27 @@ const buildReviewerRow = (doc: Document, { login, tooltips, menuIcons = 0 }: Rev
   return row;
 };
 
-export const mountPullRequestPage = (
+const buildSidebar = (
   doc: Document,
-  { tab = "", withForm = true, staleReviewerIds = [] as number[], reviewerRows = [] as ReviewerRow[] } = {},
+  {
+    token,
+    staleReviewerIds = [],
+    reviewerRows = [],
+    formAction = `${PULL_REQUEST_PATH}/review-requests`,
+  }: {
+    token: string;
+    staleReviewerIds?: number[];
+    reviewerRows?: ReviewerRow[];
+    formAction?: string;
+  },
 ) => {
-  window.history.replaceState({}, "", `${PULL_REQUEST_PATH}${tab}`);
-  if (!withForm) return;
   const sidebarItem = doc.createElement("div");
   sidebarItem.className = "discussion-sidebar-item js-discussion-sidebar-item";
   const form = doc.createElement("form");
-  form.action = `${PULL_REQUEST_PATH}/review-requests`;
+  form.setAttribute("action", formAction);
   form.method = "post";
   form.append(
-    hiddenInput(doc, "authenticity_token", "page-token"),
+    hiddenInput(doc, "authenticity_token", token),
     hiddenInput(doc, "partial_last_updated", "1700000000"),
     ...staleReviewerIds.map((id) => hiddenInput(doc, "reviewer_user_ids[]", String(id))),
     hiddenInput(doc, "dummy-field-just-to-avoid-empty-submit", "foo"),
@@ -85,7 +114,70 @@ export const mountPullRequestPage = (
   const marker = doc.createElement("span");
   marker.className = "page-sidebar";
   sidebarItem.append(form, marker, ...reviewerRows.map((row) => buildReviewerRow(doc, row)));
-  doc.body.append(sidebarItem);
+  return sidebarItem;
+};
+
+const buildPullRequestHeader = (doc: Document, author: string) => {
+  const discussion = doc.createElement("div");
+  discussion.className = "js-discussion";
+  const link = doc.createElement("a");
+  link.className = "author Link--primary";
+  link.href = `/${author}`;
+  link.textContent = author;
+  const laterCommenter = doc.createElement("a");
+  laterCommenter.className = "author Link--primary";
+  laterCommenter.href = "/grace-ops";
+  laterCommenter.textContent = "grace-ops";
+  discussion.append(link, " opened this pull request", laterCommenter, " commented");
+  return discussion;
+};
+
+export const mountPullRequestPage = (
+  doc: Document,
+  {
+    tab = "",
+    path = PULL_REQUEST_PATH,
+    withForm = true,
+    staleReviewerIds = [] as number[],
+    reviewerRows = [] as ReviewerRow[],
+    author = undefined as string | undefined,
+  } = {},
+) => {
+  window.history.replaceState({}, "", `${path}${tab}`);
+  if (author !== undefined) doc.body.append(buildPullRequestHeader(doc, author));
+  if (!withForm) return;
+  doc.body.append(
+    buildSidebar(doc, {
+      token: "page-token",
+      staleReviewerIds,
+      reviewerRows,
+      formAction: `${path}/review-requests`,
+    }),
+  );
+};
+
+const buildConversationPage = ({
+  signedIn = true,
+  canRequest = true,
+  unreadable = false,
+  reviewerRows = [],
+  formAction,
+  author,
+}: FakeConversationPage): string => {
+  const doc = document.implementation.createHTMLDocument("Pull request");
+  if (!unreadable) {
+    const login = doc.createElement("meta");
+    login.name = "user-login";
+    login.content = signedIn ? "current-user" : "";
+    doc.head.append(login);
+  }
+  if (author !== undefined) doc.body.append(buildPullRequestHeader(doc, author));
+  if (signedIn && canRequest && !unreadable) {
+    doc.body.append(
+      buildSidebar(doc, { token: "conversation-token", reviewerRows, ...(formAction ? { formAction } : {}) }),
+    );
+  }
+  return doc.documentElement.outerHTML;
 };
 
 const entryFor = (person: FakePerson) => ({
@@ -96,6 +188,7 @@ const entryFor = (person: FakePerson) => ({
   avatar: person.avatar ?? `https://avatars.githubusercontent.com/u/${person.id}`,
   selected: person.selected ?? false,
   disabled: person.disabled ?? false,
+  ...(person.description === undefined ? {} : { description: person.description }),
 });
 
 const matchesQuery = (person: FakePerson, query: string) =>
@@ -105,7 +198,13 @@ const matchesQuery = (person: FakePerson, query: string) =>
       (person.name ?? "").toLowerCase().includes(query.toLowerCase());
 
 const freshSidebar = (logins: string[]) =>
-  `<div class="discussion-sidebar-item js-discussion-sidebar-item"><form action="${PULL_REQUEST_PATH}/review-requests" method="post"></form><span class="fresh-sidebar">${logins.join(",")}</span></div>`;
+  `<div class="discussion-sidebar-item js-discussion-sidebar-item"><form action="${PULL_REQUEST_PATH}/review-requests" method="post"><input type="hidden" name="authenticity_token" value="fresh-token"></form><span class="fresh-sidebar">${logins.join(",")}</span></div>`;
+
+const loginRedirect = () => {
+  const response = new Response("<html><head></head><body>Sign in</body></html>");
+  Object.defineProperty(response, "url", { value: "https://github.com/login?return_to=%2Facme" });
+  return response;
+};
 
 export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOptions = {}): FakeGitHub => {
   const posts: URLSearchParams[] = [];
@@ -114,7 +213,9 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
   const answerSearch = (url: URL) => {
     if (options.searchAnswer !== undefined) return Response.json(options.searchAnswer);
     const query = url.searchParams.get("q") ?? "";
-    const found = people.filter((person) => person.selected || matchesQuery(person, query));
+    const alwaysListed = (person: FakePerson) =>
+      (person.selected ?? false) && !(options.searchFiltersRequested ?? false);
+    const found = people.filter((person) => alwaysListed(person) || matchesQuery(person, query));
     return Response.json({ suggestions: [], users: found.map(entryFor) });
   };
 
@@ -123,7 +224,8 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
     if (options.postStatus !== undefined) return new Response("", { status: options.postStatus });
     if (!options.postIgnored) {
       const ids = new Set(REVIEWER_FIELDS.flatMap((field) => body.getAll(field)));
-      for (const person of people) person.selected = ids.has(String(person.id));
+      const dropped = new Set(options.dropsOnPost ?? []);
+      for (const person of people) person.selected = ids.has(String(person.id)) && !dropped.has(person.login);
     }
     return new Response(freshSidebar(requestedLogins()), { headers: { "content-type": "text/html" } });
   };
@@ -140,6 +242,24 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
     return new Response(null, { status: missing.has(login.toLowerCase()) ? 404 : 200 });
   };
 
+  let conversationFetches = 0;
+  const answerConversation = () => {
+    conversationFetches += 1;
+    const conversation = options.conversation ?? {};
+    if (conversation.status !== undefined) return new Response("", { status: conversation.status });
+    if (conversation.redirectedToLogin) return loginRedirect();
+    return new Response(buildConversationPage(conversation), { headers: { "content-type": "text/html" } });
+  };
+
+  const answerPullRequestSearch = (url: URL) => {
+    if (options.searchStatus !== undefined) return new Response("", { status: options.searchStatus });
+    if (options.searchBody !== undefined) return new Response(options.searchBody);
+    const login = /review-requested:(\S+)/.exec(url.searchParams.get("q") ?? "")?.[1] ?? "";
+    return Response.json({
+      payload: { blackbirdSearchRoute: { result_count: options.openRequestCounts?.[login] ?? 0 } },
+    });
+  };
+
   const fakeFetch = vi.fn<typeof fetch>((input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (init?.method === "POST") {
@@ -147,8 +267,17 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
       return Promise.resolve(answerPost(body));
     }
     if (init?.method === "HEAD") return Promise.resolve(answerProfile(url));
+    if (/^\/acme\/widgets\/pull\/\d+$/.test(url.pathname)) return Promise.resolve(answerConversation());
+    if (url.pathname === "/search") return Promise.resolve(answerPullRequestSearch(url));
     return Promise.resolve(answerSearch(url));
   });
 
-  return { fetch: fakeFetch, posts, profileChecks, requestedLogins };
+  return {
+    fetch: fakeFetch,
+    page: { doc: document, fetch: fakeFetch, conversation: new ConversationCache() },
+    posts,
+    profileChecks,
+    conversationFetches: () => conversationFetches,
+    requestedLogins,
+  };
 };

@@ -16,10 +16,15 @@ Text and answers for the Chrome Web Store developer dashboard, kept here so ever
 
 Request reviews on a GitHub pull request from several people at once.
 
-Open Reviewer Groups on a pull request and it lists everyone GitHub lets you request there, with avatars, teams, and who is already requested. Tick the people you want and request them in one click. Search finds anyone who can review, not only GitHub's suggestions.
+Open Reviewer Groups on any tab of a pull request and it lists everyone GitHub lets you request there, with avatars, teams, who is already requested, who already reviewed, and how many open review requests each of up to ten people on the pull request has, and each member of a group being asked. Tick the people you want and request them in one click. Search finds anyone who can review, not only GitHub's suggestions.
 
 Save a set of people you ask often as a group. Next time it is two clicks: the toolbar icon, then the group.
 
+- Re-request people who already reviewed in one click after a new push. The extension reports anyone GitHub did not confirm.
+- Link a group to repositories, and it is listed first on their pull requests.
+- Have a group ask only some of its members, picking those with the fewest open review requests.
+- Remove the people you just requested if you picked the wrong group.
+- Export your groups to a file and import them on another computer.
 - No token and no setup: it uses the GitHub session you are already signed in with.
 - It works only in the tab you click it on, and only after you click it. It has no standing access to any site.
 - No servers, no analytics, no tracking. Your groups sync through your Chrome profile.
@@ -37,7 +42,7 @@ Save a set of people you ask often as a group. Next time it is two clicks: the t
 
 **Permission justifications:**
 
-- `storage`: Saves the user's reviewer groups (names and GitHub logins) with chrome.storage.sync, the people ticked but not yet requested with chrome.storage.session, and the reviewers GitHub has listed (login, name, avatar address) with chrome.storage.local, so groups can be built when no pull request is open.
+- `storage`: Saves the user's reviewer groups (names, GitHub logins, linked repositories and how many to ask) with chrome.storage.sync, the people ticked but not yet requested and recent open review request counts with chrome.storage.session, and the reviewers GitHub has listed (login, name, avatar address) and when each was last asked with chrome.storage.local, so groups can be built when no pull request is open and requests rotate between people.
 - `activeTab`: Gives the extension access to the GitHub pull request in the current tab only after the user clicks its icon, so it needs no standing access to github.com.
 - `scripting`: Runs the extension's own script in that tab to read GitHub's reviewer list and send the review request with the user's GitHub session.
 
@@ -46,7 +51,7 @@ Save a set of people you ask often as a group. Next time it is two clicks: the t
 **Data usage:**
 
 - Personally identifiable information: yes. The extension stores the GitHub logins the user adds to groups, and the logins, display names and avatar addresses of reviewers GitHub has listed. They stay in the user's Chrome storage and are sent only to github.com, as part of the review requests the user makes.
-- Website content: yes. It reads the list of reviewers GitHub offers on the open pull request to show it in the popup, and whether a profile page still exists to flag renamed or removed logins.
+- Website content: yes. It reads the list of reviewers GitHub offers on the open pull request and the reviews already left there to show them in the popup, the number of open pull requests waiting on a person's review from GitHub's search, and whether a profile page still exists to flag renamed or removed logins.
 - No other category applies.
 
 **Certifications:** the data is not sold to third parties, not used or transferred for purposes unrelated to the single purpose, and not used to determine creditworthiness or for lending.

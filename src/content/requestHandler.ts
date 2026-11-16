@@ -1,30 +1,62 @@
 import {
+  COUNT_OPEN_REQUESTS,
+  countOpenRequestsMessageSchema,
   LIST_REVIEWERS,
   listReviewersMessageSchema,
+  LOOK_UP_GROUP,
+  lookUpGroupMessageSchema,
+  REMOVE_REVIEWERS,
+  removeReviewersMessageSchema,
   REQUEST_REVIEW,
   requestReviewMessageSchema,
+  type CountOpenRequestsReply,
   type ListReviewersReply,
+  type LookUpGroupReply,
+  type RemoveReviewersReply,
   type RequestReviewReply,
 } from "../messages";
 import {
+  ConversationPageUnreadableError,
+  isShowingPullRequest,
+  NotSignedInError,
+  PullRequestChangedError,
+  PullRequestPageMissingError,
+  ReviewerFormMissingError,
+} from "./conversationPage";
+import {
   GitHubAnswerError,
   GitHubAnswerUnreadableError,
-  PullRequestPageMissingError,
+  listReviewers,
+  lookUpGroup,
+  removeReviewersFrom,
   RequestInProgressError,
-  ReviewerFormMissingError,
   requestReviewFrom,
-  searchReviewerCandidates,
   type GitHubPage,
 } from "./githubReviewers";
+import { countOpenReviewRequests, SearchAnswerUnreadableError, SearchLimitedError } from "./openRequests";
 
-const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([REQUEST_REVIEW, LIST_REVIEWERS]);
+type ExtensionReply =
+  RequestReviewReply | ListReviewersReply | CountOpenRequestsReply | LookUpGroupReply | RemoveReviewersReply;
+
+const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([
+  REQUEST_REVIEW,
+  LIST_REVIEWERS,
+  COUNT_OPEN_REQUESTS,
+  LOOK_UP_GROUP,
+  REMOVE_REVIEWERS,
+]);
 
 const EXPECTED_FAILURES = [
+  ConversationPageUnreadableError,
   GitHubAnswerError,
   GitHubAnswerUnreadableError,
+  NotSignedInError,
+  PullRequestChangedError,
   PullRequestPageMissingError,
   RequestInProgressError,
   ReviewerFormMissingError,
+  SearchAnswerUnreadableError,
+  SearchLimitedError,
 ];
 
 export const isExtensionMessage = (message: unknown): message is { type: string } =>
@@ -45,10 +77,16 @@ const handleListReviewers = (page: GitHubPage, message: unknown): Promise<ListRe
   if (!parsed.success) {
     return Promise.resolve({ ok: false, error: "The request did not carry a valid search." });
   }
-  return searchReviewerCandidates(page, parsed.data.query).then(
-    (candidates) => ({ ok: true, candidates }),
+  page.conversation.enterSession(parsed.data.session);
+  return listReviewers(page, parsed.data.query).then(
+    (list) => ({ ok: true, ...list }),
     replyWithExpectedFailure,
   );
+};
+
+const requestFromThisPullRequest = async (page: GitHubPage, pullRequest: string, members: string[]) => {
+  if (!isShowingPullRequest(page.doc, pullRequest)) throw new PullRequestChangedError();
+  return requestReviewFrom(page, members);
 };
 
 const handleRequestReview = (page: GitHubPage, message: unknown): Promise<RequestReviewReply> => {
@@ -56,18 +94,72 @@ const handleRequestReview = (page: GitHubPage, message: unknown): Promise<Reques
   if (!parsed.success) {
     return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
   }
-  return requestReviewFrom(page, parsed.data.members).then(
+  page.conversation.enterSession(parsed.data.session);
+  return requestFromThisPullRequest(page, parsed.data.pullRequest, parsed.data.members).then(
     (outcome) => ({ ok: true, outcome }),
     replyWithExpectedFailure,
   );
 };
 
+const handleCountOpenRequests = (page: GitHubPage, message: unknown): Promise<CountOpenRequestsReply> => {
+  const parsed = countOpenRequestsMessageSchema.safeParse(message);
+  if (!parsed.success) {
+    return Promise.resolve({
+      ok: false,
+      error: "The request did not carry a person's login.",
+      limited: false,
+    });
+  }
+  return countOpenReviewRequests(page, parsed.data.login).then(
+    (count) => ({ ok: true, count }),
+    (error: unknown) => ({
+      ...replyWithExpectedFailure(error),
+      limited: error instanceof SearchLimitedError,
+    }),
+  );
+};
+
+const handleLookUpGroup = (page: GitHubPage, message: unknown): Promise<LookUpGroupReply> => {
+  const parsed = lookUpGroupMessageSchema.safeParse(message);
+  if (!parsed.success) {
+    return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
+  }
+  page.conversation.enterSession(parsed.data.session);
+  return lookUpGroup(page, parsed.data.members).then(
+    (lookup) => ({ ok: true, ...lookup }),
+    replyWithExpectedFailure,
+  );
+};
+
+const removeFromThisPullRequest = async (page: GitHubPage, pullRequest: string, members: string[]) => {
+  if (!isShowingPullRequest(page.doc, pullRequest)) throw new PullRequestChangedError();
+  return removeReviewersFrom(page, members);
+};
+
+const handleRemoveReviewers = (page: GitHubPage, message: unknown): Promise<RemoveReviewersReply> => {
+  const parsed = removeReviewersMessageSchema.safeParse(message);
+  if (!parsed.success) {
+    return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
+  }
+  page.conversation.enterSession(parsed.data.session);
+  return removeFromThisPullRequest(page, parsed.data.pullRequest, parsed.data.members).then(
+    (outcome) => ({ ok: true, outcome }),
+    replyWithExpectedFailure,
+  );
+};
+
+const HANDLERS: Record<string, (page: GitHubPage, message: unknown) => Promise<ExtensionReply>> = {
+  [REQUEST_REVIEW]: handleRequestReview,
+  [LIST_REVIEWERS]: handleListReviewers,
+  [COUNT_OPEN_REQUESTS]: handleCountOpenRequests,
+  [LOOK_UP_GROUP]: handleLookUpGroup,
+  [REMOVE_REVIEWERS]: handleRemoveReviewers,
+};
+
 export const handleExtensionMessage = async (
   page: GitHubPage,
   message: unknown,
-): Promise<RequestReviewReply | ListReviewersReply | undefined> => {
+): Promise<ExtensionReply | undefined> => {
   if (!isExtensionMessage(message)) return undefined;
-  return message.type === LIST_REVIEWERS
-    ? handleListReviewers(page, message)
-    : handleRequestReview(page, message);
+  return HANDLERS[message.type]?.(page, message);
 };

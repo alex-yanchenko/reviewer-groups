@@ -1,11 +1,7 @@
-import type { ReviewerCandidate, ReviewState } from "../messages";
+import type { ReviewerCandidate } from "../messages";
 import { isGone, rememberedPerson, type Directory } from "./directory";
-
-const REVIEW_BADGES: Record<ReviewState, { label: string; className: string }> = {
-  approved: { label: "approved", className: "badge badge-done" },
-  changesRequested: { label: "changes requested", className: "badge badge-warn" },
-  commented: { label: "commented", className: "badge" },
-};
+import type { CountSnapshot } from "./openRequestCounter";
+import { REVIEW_BADGES } from "./reviewBadges";
 
 const loginKey = (login: string) => login.toLowerCase();
 
@@ -36,11 +32,13 @@ function PersonItem({
   person,
   ticked,
   gone,
+  openRequests,
   onToggle,
 }: {
   person: ReviewerCandidate;
   ticked: boolean;
   gone: boolean;
+  openRequests: number | undefined;
   onToggle: () => void;
 }) {
   return (
@@ -62,6 +60,11 @@ function PersonItem({
           <span className="person-login">{person.login}</span>
           {person.description && <span className="person-description">{person.description}</span>}
         </span>
+        {openRequests !== undefined && (
+          <span className="badge" title={`${openRequests} open requests you can see`}>
+            {openRequests} open
+          </span>
+        )}
         {person.team && <span className="badge">team</span>}
         {person.requested && <span className="badge badge-done">requested</span>}
         {!person.requested && person.reviewState !== null && (
@@ -82,6 +85,7 @@ export function PeoplePicker({
   selection,
   search,
   problem,
+  counts,
   onSearch,
   onToggle,
 }: {
@@ -90,6 +94,7 @@ export function PeoplePicker({
   selection: string[];
   search: string;
   problem: string;
+  counts: CountSnapshot;
   onSearch: (search: string) => void;
   onToggle: (login: string) => void;
 }) {
@@ -119,10 +124,12 @@ export function PeoplePicker({
             person={person}
             ticked={ticked.has(loginKey(person.login))}
             gone={isGone(directory, person.login)}
+            openRequests={counts.counts[loginKey(person.login)]}
             onToggle={() => onToggle(person.login)}
           />
         ))}
       </ul>
+      {counts.problem && <p className="hint">{counts.problem}</p>}
       {found.length === 0 && search.trim().length > 0 && (
         <p className="empty">Nobody matches “{search.trim()}”.</p>
       )}

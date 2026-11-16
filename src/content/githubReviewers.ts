@@ -1,13 +1,25 @@
 import * as z from "zod/mini";
+import {
+  landedOnLoginPage,
+  NotSignedInError,
+  pullRequestPath,
+  pullRequestUrl,
+  readAuthor,
+  readConversation,
+  readReviewerForm,
+  readReviewsLeft,
+  readReviewStates,
+  showFreshSidebar,
+  showsSignInForm,
+  type ReviewState,
+} from "./conversationPage";
+import { GitHubAnswerError, type GitHubPage } from "./githubPage";
 
-const REVIEWER_FORM = 'form[action$="/review-requests"]';
-const SIDEBAR_ITEM = ".discussion-sidebar-item";
-const REVIEWER_ROW = "div.d-flex.flex-items-center";
+export { GitHubAnswerError };
+export type { GitHubPage, ReviewState };
+
 const USER_FIELD = "reviewer_user_ids[]";
 const TEAM_FIELD = "reviewer_team_ids[]";
-const PULL_REQUEST_PATH = /^\/[^/]+\/[^/]+\/pull\/\d+(?=\/|$)/;
-
-export type ReviewState = "approved" | "changesRequested" | "commented";
 
 export interface ReviewerCandidate {
   login: string;
@@ -25,33 +37,8 @@ export interface ReviewRequestOutcome {
   unavailable: string[];
   notFound: string[];
   unconfirmed: string[];
+  dropped: string[];
   gone: string[];
-}
-
-export interface GitHubPage {
-  doc: Document;
-  fetch: typeof fetch;
-}
-
-export class PullRequestPageMissingError extends Error {
-  override readonly name = "PullRequestPageMissingError";
-  constructor() {
-    super("This tab is not a GitHub pull request.");
-  }
-}
-
-export class ReviewerFormMissingError extends Error {
-  override readonly name = "ReviewerFormMissingError";
-  constructor() {
-    super("Open the pull request's Conversation tab to request reviews.");
-  }
-}
-
-export class GitHubAnswerError extends Error {
-  override readonly name = "GitHubAnswerError";
-  constructor(status: number) {
-    super(`GitHub answered ${status}.`);
-  }
 }
 
 export class GitHubAnswerUnreadableError extends Error {
@@ -73,76 +60,81 @@ const reviewerEntrySchema = z.object({
   login: z.string(),
   type: z.string(),
   selected: z.boolean(),
-  disabled: z.optional(z.boolean()),
-  avatar: z.optional(z.string()),
+  disabled: z.nullish(z.boolean()),
+  avatar: z.nullish(z.string()),
   name: z.optional(z.unknown()),
-  description: z.optional(z.string()),
+  description: z.nullish(z.string()),
 });
 
 type ReviewerEntry = z.infer<typeof reviewerEntrySchema>;
+
+const claimsToBeRequestedSchema = z.object({ selected: z.literal(true) });
 
 const reviewerAnswerSchema = z.object({
   suggestions: z.optional(z.array(z.unknown())),
   users: z.optional(z.array(z.unknown())),
 });
 
-const reviewRequestsUrl = (doc: Document): URL => {
-  const path = PULL_REQUEST_PATH.exec(doc.location.pathname);
-  if (path === null) throw new PullRequestPageMissingError();
-  return new URL(`${path[0]}/review-requests`, doc.location.origin);
-};
-
 const readEntry = (raw: unknown): ReviewerEntry[] => {
   const result = reviewerEntrySchema.safeParse(raw);
   return result.success ? [result.data] : [];
 };
 
-const readEntries = (answer: unknown): ReviewerEntry[] => {
+const isUnreadableRequestedEntry = (raw: unknown): boolean =>
+  claimsToBeRequestedSchema.safeParse(raw).success && !reviewerEntrySchema.safeParse(raw).success;
+
+interface ReadEntries {
+  entries: ReviewerEntry[];
+  requestedUnreadable: boolean;
+}
+
+const readEntries = (answer: unknown): ReadEntries => {
   const parsed = reviewerAnswerSchema.safeParse(answer);
   if (!parsed.success) throw new GitHubAnswerUnreadableError();
   const raw = [...(parsed.data.suggestions ?? []), ...(parsed.data.users ?? [])];
   const entries = raw.flatMap(readEntry);
   if (raw.length > 0 && entries.length === 0) throw new GitHubAnswerUnreadableError();
-  return entries;
+  return { entries, requestedUnreadable: raw.some(isUnreadableRequestedEntry) };
 };
 
-const searchReviewers = async ({ doc, fetch }: GitHubPage, query: string): Promise<ReviewerEntry[]> => {
-  const url = reviewRequestsUrl(doc);
+const readJsonOrSayWhyNot = async (response: Response): Promise<unknown> => {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw showsSignInForm(text) ? new NotSignedInError() : new GitHubAnswerUnreadableError();
+  }
+};
+
+const fetchEntries = async (
+  { doc, fetch }: GitHubPage,
+  query: string,
+  path: string,
+): Promise<ReadEntries> => {
+  const url = pullRequestUrl(doc, "/review-requests", path);
   url.searchParams.set("typeAhead", "true");
   url.searchParams.set("q", query);
   const response = await fetch(url.href, {
     headers: { "X-Requested-With": "XMLHttpRequest" },
     credentials: "same-origin",
   });
+  if (landedOnLoginPage(response)) throw new NotSignedInError();
   if (!response.ok) throw new GitHubAnswerError(response.status);
-  return readEntries(await response.json());
+  return readEntries(await readJsonOrSayWhyNot(response));
+};
+
+const searchReviewers = async (
+  page: GitHubPage,
+  query: string,
+  path = pullRequestPath(page.doc),
+  requestedMustBeReadable = false,
+): Promise<ReviewerEntry[]> => {
+  const { entries, requestedUnreadable } = await fetchEntries(page, query, path);
+  if (requestedMustBeReadable && requestedUnreadable) throw new GitHubAnswerUnreadableError();
+  return entries;
 };
 
 const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-
-const REVIEW_STATE_TOOLTIPS: [RegExp, ReviewState][] = [
-  [/approved these changes/i, "approved"],
-  [/requested changes/i, "changesRequested"],
-  [/left review comments/i, "commented"],
-];
-
-const reviewStateOf = (row: Element): ReviewState | undefined => {
-  const tooltips = [...row.querySelectorAll("tool-tip")].map((tooltip) => tooltip.textContent ?? "");
-  return REVIEW_STATE_TOOLTIPS.find(([pattern]) => tooltips.some((text) => pattern.test(text)))?.[1];
-};
-
-const readReviewStates = (doc: Document): Map<string, ReviewState> => {
-  const states = new Map<string, ReviewState>();
-  const sidebar = doc.querySelector(REVIEWER_FORM)?.closest(SIDEBAR_ITEM);
-  for (const row of sidebar?.querySelectorAll(REVIEWER_ROW) ?? []) {
-    const login = [...row.querySelectorAll("a")]
-      .map((link) => link.textContent?.trim() ?? "")
-      .find((text) => text.length > 0);
-    const state = reviewStateOf(row);
-    if (login !== undefined && state !== undefined) states.set(login.toLowerCase(), state);
-  }
-  return states;
-};
 
 const describeEntry = (
   { login, type, selected, disabled, avatar, name, description }: ReviewerEntry,
@@ -160,22 +152,65 @@ const describeEntry = (
 export const searchReviewerCandidates = async (
   page: GitHubPage,
   query: string,
+  path = pullRequestPath(page.doc),
 ): Promise<ReviewerCandidate[]> => {
-  const entries = await searchReviewers(page, query);
-  const reviewStates = readReviewStates(page.doc);
+  const entries = await searchReviewers(page, query, path);
+  const reviewStates = readReviewStates(await readConversation(page, path));
   return entries.map((entry) => describeEntry(entry, reviewStates));
 };
 
-const lookUpMember = async (page: GitHubPage, member: string) => ({
+export interface ReviewedPerson {
+  login: string;
+  reviewState: ReviewState;
+  requested: boolean;
+}
+
+export interface ReviewerList {
+  candidates: ReviewerCandidate[];
+  reviewed: ReviewedPerson[];
+}
+
+export const listReviewers = async (page: GitHubPage, query: string): Promise<ReviewerList> => {
+  const path = pullRequestPath(page.doc);
+  const candidates = await searchReviewerCandidates(page, query, path);
+  const requestedLogins =
+    query === ""
+      ? candidates.filter(({ requested }) => requested).map(({ login }) => login)
+      : (await searchReviewers(page, "", path)).filter(({ selected }) => selected).map(({ login }) => login);
+  const reviewed = readReviewsLeft(await readConversation(page, path)).map((review) => ({
+    ...review,
+    requested: requestedLogins.some((login) => sameLogin(login, review.login)),
+  }));
+  return { candidates, reviewed };
+};
+
+const lookUpMember = async (page: GitHubPage, member: string, path = pullRequestPath(page.doc)) => ({
   member,
-  entry: (await searchReviewers(page, member)).find((entry) => sameLogin(entry.login, member)),
+  entry: (await searchReviewers(page, member, path)).find((entry) => sameLogin(entry.login, member)),
 });
 
-const findReviewerForm = (doc: Document): HTMLFormElement => {
-  if (!PULL_REQUEST_PATH.test(doc.location.pathname)) throw new PullRequestPageMissingError();
-  const form = doc.querySelector<HTMLFormElement>(REVIEWER_FORM);
-  if (form === null) throw new ReviewerFormMissingError();
-  return form;
+export interface MemberLookup {
+  member: string;
+  candidate: ReviewerCandidate | null;
+}
+
+export interface GroupLookup {
+  members: MemberLookup[];
+  author: string | null;
+}
+
+export const lookUpGroup = async (page: GitHubPage, members: readonly string[]): Promise<GroupLookup> => {
+  const path = pullRequestPath(page.doc);
+  const found = await Promise.all(members.map((member) => lookUpMember(page, member, path)));
+  const conversation = await readConversation(page, path);
+  const reviewStates = readReviewStates(conversation);
+  return {
+    members: found.map(({ member, entry }) => ({
+      member,
+      candidate: entry === undefined ? null : describeEntry(entry, reviewStates),
+    })),
+    author: readAuthor(conversation),
+  };
 };
 
 const reviewerFormBody = (form: HTMLFormElement, reviewers: ReviewerEntry[]): URLSearchParams => {
@@ -189,25 +224,46 @@ const reviewerFormBody = (form: HTMLFormElement, reviewers: ReviewerEntry[]): UR
   return body;
 };
 
-const showFreshSidebar = (form: HTMLFormElement, html: string) => {
-  const fresh = new DOMParser().parseFromString(html, "text/html").querySelector(SIDEBAR_ITEM);
-  const current = form.closest(SIDEBAR_ITEM);
-  if (fresh !== null && current !== null) current.replaceWith(form.ownerDocument.adoptNode(fresh));
-};
-
-const sendReviewers = async (page: GitHubPage, form: HTMLFormElement, reviewers: ReviewerEntry[]) => {
-  const response = await page.fetch(form.action, {
+const sendReviewers = async (page: GitHubPage, reviewers: ReviewerEntry[], path: string) => {
+  const form = await readReviewerForm(page, path);
+  const response = await page.fetch(form.action.href, {
     method: "POST",
-    body: reviewerFormBody(form, reviewers),
+    body: reviewerFormBody(form.element, reviewers),
     headers: { Accept: "text/html", "X-Requested-With": "XMLHttpRequest" },
     credentials: "same-origin",
   });
+  page.conversation.forget();
   if (!response.ok) throw new GitHubAnswerError(response.status);
   showFreshSidebar(form, await response.text());
 };
 
-const currentlyRequested = async (page: GitHubPage) =>
-  (await searchReviewers(page, "")).filter((entry) => entry.selected);
+const currentlyRequested = async (page: GitHubPage, path: string) =>
+  (await searchReviewers(page, "", path, true)).filter((entry) => entry.selected);
+
+interface ConfirmedRequests {
+  requested: ReviewerEntry[];
+  complete: boolean;
+}
+
+const confirmedRequests = async (page: GitHubPage, path: string): Promise<ConfirmedRequests | null> => {
+  try {
+    const { entries, requestedUnreadable } = await fetchEntries(page, "", path);
+    return { requested: entries.filter((entry) => entry.selected), complete: !requestedUnreadable };
+  } catch {
+    return null;
+  }
+};
+
+const isRequestedIn = (confirmed: ConfirmedRequests | null, member: string): boolean =>
+  confirmed?.requested.some((entry) => sameLogin(entry.login, member)) ?? false;
+
+const droppedAccordingTo = (before: ReviewerEntry[], confirmed: ConfirmedRequests | null): string[] =>
+  confirmed?.complete ? droppedBy(before, confirmed.requested) : [];
+
+const droppedBy = (before: ReviewerEntry[], after: ReviewerEntry[]): string[] =>
+  before
+    .filter((entry) => !after.some((remaining) => sameLogin(remaining.login, entry.login)))
+    .map((entry) => entry.login);
 
 const profilePath = (login: string) => {
   const [owner, team] = login.split("/");
@@ -233,17 +289,21 @@ const sortOutGoneAccounts = async (page: GitHubPage, outcome: ReviewRequestOutco
 };
 
 const requestLookedUpMembers = async (page: GitHubPage, members: readonly string[]) => {
-  const form = findReviewerForm(page.doc);
+  const path = pullRequestPath(page.doc);
+  await readReviewerForm(page, path);
   const outcome: ReviewRequestOutcome = {
     added: [],
     alreadyRequested: [],
     unavailable: [],
     notFound: [],
     unconfirmed: [],
+    dropped: [],
     gone: [],
   };
   const toAdd: { member: string; entry: ReviewerEntry }[] = [];
-  for (const { member, entry } of await Promise.all(members.map((member) => lookUpMember(page, member)))) {
+  for (const { member, entry } of await Promise.all(
+    members.map((member) => lookUpMember(page, member, path)),
+  )) {
     if (entry === undefined) outcome.notFound.push(member);
     else if (entry.selected) outcome.alreadyRequested.push(member);
     else if (entry.disabled ?? false) outcome.unavailable.push(member);
@@ -251,26 +311,64 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
   }
   await sortOutGoneAccounts(page, outcome);
   if (toAdd.length === 0) return outcome;
-  await sendReviewers(page, form, [...(await currentlyRequested(page)), ...toAdd.map(({ entry }) => entry)]);
-  const confirmed = await currentlyRequested(page);
+  const before = await currentlyRequested(page, path);
+  await sendReviewers(page, [...before, ...toAdd.map(({ entry }) => entry)], path);
+  const confirmed = await confirmedRequests(page, path);
   for (const { member } of toAdd) {
-    const isRequested = confirmed.some((entry) => sameLogin(entry.login, member));
-    (isRequested ? outcome.added : outcome.unconfirmed).push(member);
+    (isRequestedIn(confirmed, member) ? outcome.added : outcome.unconfirmed).push(member);
   }
+  outcome.dropped.push(...droppedAccordingTo(before, confirmed));
   return outcome;
 };
 
-let requestRunning = false;
+let writeRunning = false;
 
-export const requestReviewFrom = async (
-  page: GitHubPage,
-  members: readonly string[],
-): Promise<ReviewRequestOutcome> => {
-  if (requestRunning) throw new RequestInProgressError();
-  requestRunning = true;
+const withWriteLock = async <Result>(write: () => Promise<Result>): Promise<Result> => {
+  if (writeRunning) throw new RequestInProgressError();
+  writeRunning = true;
   try {
-    return await requestLookedUpMembers(page, members);
+    return await write();
   } finally {
-    requestRunning = false;
+    writeRunning = false;
   }
 };
+
+export const requestReviewFrom = (
+  page: GitHubPage,
+  members: readonly string[],
+): Promise<ReviewRequestOutcome> => withWriteLock(() => requestLookedUpMembers(page, members));
+
+export interface RemovalOutcome {
+  removed: string[];
+  notRequested: string[];
+  unconfirmed: string[];
+  dropped: string[];
+}
+
+const removeRequestedMembers = async (page: GitHubPage, members: readonly string[]) => {
+  const path = pullRequestPath(page.doc);
+  await readReviewerForm(page, path);
+  const current = await currentlyRequested(page, path);
+  const isRequested = (requested: ReviewerEntry[], member: string) =>
+    requested.some((entry) => sameLogin(entry.login, member));
+  const outcome: RemovalOutcome = {
+    removed: [],
+    notRequested: members.filter((member) => !isRequested(current, member)),
+    unconfirmed: [],
+    dropped: [],
+  };
+  const toRemove = members.filter((member) => isRequested(current, member));
+  if (toRemove.length === 0) return outcome;
+  const kept = current.filter((entry) => !members.some((member) => sameLogin(member, entry.login)));
+  await sendReviewers(page, kept, path);
+  const confirmed = await confirmedRequests(page, path);
+  for (const member of toRemove) {
+    const confirmedRemoved = confirmed?.complete === true && !isRequestedIn(confirmed, member);
+    (confirmedRemoved ? outcome.removed : outcome.unconfirmed).push(member);
+  }
+  outcome.dropped.push(...droppedAccordingTo(kept, confirmed));
+  return outcome;
+};
+
+export const removeReviewersFrom = (page: GitHubPage, members: readonly string[]): Promise<RemovalOutcome> =>
+  withWriteLock(() => removeRequestedMembers(page, members));

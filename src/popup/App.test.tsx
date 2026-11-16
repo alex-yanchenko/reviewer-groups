@@ -1,121 +1,21 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Group } from "../groups/group";
-import type {
-  ListReviewersReply,
-  RequestReviewReply,
-  ReviewerCandidate,
-  ReviewRequestOutcome,
-} from "../messages";
-import { App, type DirectoryStore, type Draft, type DraftStore, type GroupStore } from "./App";
-import { EMPTY_DIRECTORY, type Directory } from "./directory";
+import type { RequestReviewReply } from "../messages";
+import type { Draft } from "./App";
+import type { Directory } from "./directory";
+import {
+  candidate,
+  emptyDraft,
+  fillGroupForm,
+  isTicked,
+  outcome,
+  renderApp,
+  reviewers,
+  tick,
+} from "./testing/renderApp";
 
 const backend: Group = { id: "g1", name: "Backend", members: ["mona", "hubot"] };
-
-const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): ReviewerCandidate => ({
-  login,
-  description: "",
-  avatarUrl: null,
-  team: false,
-  requested: false,
-  available: true,
-  reviewState: null,
-  ...overrides,
-});
-
-const outcome = (overrides: Partial<ReviewRequestOutcome>): ReviewRequestOutcome => ({
-  added: [],
-  alreadyRequested: [],
-  unavailable: [],
-  notFound: [],
-  unconfirmed: [],
-  gone: [],
-  ...overrides,
-});
-
-const reviewers: ReviewerCandidate[] = [
-  candidate("mona", { description: "Mona Lisa", avatarUrl: "https://avatars.githubusercontent.com/u/101" }),
-  candidate("hubot"),
-  candidate("octocat", { requested: true }),
-  candidate("acme/backend", { team: true, description: "API owners" }),
-];
-
-const emptyDraft: Draft = { selection: [], editingGroupId: null };
-
-interface RenderOptions {
-  groups?: Group[];
-  unreadable?: number;
-  saveFailure?: Error;
-  pullRequest?: string | null;
-  candidates?: ListReviewersReply;
-  searches?: Record<string, ReviewerCandidate[]>;
-  draft?: Draft;
-  draftLoad?: Promise<Draft>;
-  directory?: Directory;
-  requestReview?: (members: string[]) => Promise<RequestReviewReply>;
-}
-
-const renderApp = ({
-  groups = [],
-  unreadable = 0,
-  saveFailure,
-  pullRequest = "acme/widgets#7",
-  candidates = { ok: true, candidates: reviewers },
-  searches = {},
-  draft = emptyDraft,
-  draftLoad = Promise.resolve(draft),
-  directory = EMPTY_DIRECTORY,
-  requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
-}: RenderOptions = {}) => {
-  const directoryStore = {
-    load: vi.fn<DirectoryStore["load"]>().mockResolvedValueOnce(directory),
-    save: vi.fn<DirectoryStore["save"]>().mockResolvedValue(undefined),
-  } satisfies DirectoryStore;
-  const save = vi.fn<GroupStore["save"]>();
-  if (saveFailure === undefined) save.mockResolvedValue(undefined);
-  else save.mockRejectedValueOnce(saveFailure);
-  const store = {
-    load: vi.fn<GroupStore["load"]>().mockResolvedValueOnce({ groups, unreadable }),
-    save,
-  } satisfies GroupStore;
-  const drafts = {
-    load: vi.fn<DraftStore["load"]>().mockReturnValueOnce(draftLoad),
-    save: vi.fn<DraftStore["save"]>().mockResolvedValue(undefined),
-  } satisfies DraftStore;
-  const listReviewers = vi
-    .fn<(query: string) => Promise<ListReviewersReply>>()
-    .mockImplementation((query) =>
-      Promise.resolve(query === "" ? candidates : { ok: true, candidates: searches[query] ?? [] }),
-    );
-  render(
-    <App
-      store={store}
-      drafts={drafts}
-      directory={directoryStore}
-      requestReview={requestReview}
-      listReviewers={listReviewers}
-      newId={() => "new-id"}
-      pullRequest={pullRequest}
-    />,
-  );
-  return {
-    save: store.save,
-    saveDraft: drafts.save,
-    saveDirectory: directoryStore.save,
-    listReviewers,
-    requestReview,
-  };
-};
-
-const tick = async (login: string) => fireEvent.click(await screen.findByRole("checkbox", { name: login }));
-
-const isTicked = (login: string) => screen.getByRole<HTMLInputElement>("checkbox", { name: login }).checked;
-
-const fillGroupForm = (name: string, members: string) => {
-  fireEvent.change(screen.getByLabelText("Group name"), { target: { value: name } });
-  fireEvent.change(screen.getByLabelText("Members"), { target: { value: members } });
-  fireEvent.click(screen.getByRole("button", { name: "Save group" }));
-};
 
 afterEach(cleanup);
 
@@ -136,7 +36,10 @@ describe("App on a pull request", () => {
   });
 
   it("asks GitHub for the people matching the search and lists only them", async () => {
-    const { listReviewers } = renderApp({ searches: { lisa: [reviewers[0] ?? candidate("mona")] } });
+    const { listReviewers } = renderApp({
+      groups: [backend],
+      searches: { lisa: [reviewers[0] ?? candidate("mona")] },
+    });
     await screen.findByRole("list", { name: "People" });
 
     fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "lisa" } });
@@ -150,6 +53,7 @@ describe("App on a pull request", () => {
 
   it("shows only the people who match the search, not everyone GitHub adds because they are already requested", async () => {
     renderApp({
+      groups: [backend],
       searches: {
         Noor: [
           candidate("river-chen", { description: "River Chen", requested: true }),
@@ -204,7 +108,7 @@ describe("App on a pull request", () => {
       ok: true,
       outcome: outcome({ added: ["mona", "hubot"] }),
     });
-    const { saveDraft } = renderApp({ requestReview });
+    const { saveDraft } = renderApp({ groups: [backend], requestReview });
     await tick("mona");
     await tick("hubot");
 
@@ -221,7 +125,7 @@ describe("App on a pull request", () => {
     const requestReview = vi
       .fn<(members: string[]) => Promise<RequestReviewReply>>()
       .mockResolvedValueOnce({ ok: false, error: "GitHub's Reviewers picker did not load its list." });
-    renderApp({ requestReview });
+    renderApp({ groups: [backend], requestReview });
     await tick("mona");
 
     fireEvent.click(screen.getByRole("button", { name: "Request 1" }));
@@ -262,7 +166,7 @@ describe("App on a pull request", () => {
   });
 
   it("records every tick so closing the dropdown loses nothing", async () => {
-    const { saveDraft } = renderApp();
+    const { saveDraft } = renderApp({ groups: [backend] });
 
     await tick("hubot");
 
@@ -271,7 +175,7 @@ describe("App on a pull request", () => {
   });
 
   it("restores the ticks from the last time the dropdown was open", async () => {
-    renderApp({ draft: { selection: ["hubot"], editingGroupId: null } });
+    renderApp({ groups: [backend], draft: { selection: ["hubot"], editingGroupId: null } });
 
     await screen.findByRole("list", { name: "People" });
 
@@ -332,7 +236,7 @@ describe("App on a pull request", () => {
       await draftLoad;
     });
 
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Save changes" })).toBeTruthy();
     expect(isTicked("mona")).toBe(true);
   });
 
@@ -368,6 +272,7 @@ describe("App on a pull request", () => {
           candidate("spacecat", { reviewState: "commented" }),
           candidate("octocat", { requested: true }),
         ],
+        reviewed: [],
       },
     });
 
@@ -383,7 +288,9 @@ describe("App on a pull request", () => {
   });
 
   it("marks people GitHub says cannot review and does not let them be ticked", async () => {
-    renderApp({ candidates: { ok: true, candidates: [candidate("away-person", { available: false })] } });
+    renderApp({
+      candidates: { ok: true, candidates: [candidate("away-person", { available: false })], reviewed: [] },
+    });
 
     const box = await screen.findByRole<HTMLInputElement>("checkbox", { name: "away-person" });
 
@@ -562,6 +469,14 @@ describe("App remembering people", () => {
 });
 
 describe("App away from a pull request", () => {
+  it("opens the options page, where groups are exported and imported", async () => {
+    const { openOptions } = renderApp({ groups: [backend], pullRequest: null });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export or import groups" }));
+
+    expect(openOptions).toHaveBeenCalledTimes(1);
+  });
+
   it("does not ask the tab for reviewers and says where to go", async () => {
     const { listReviewers, requestReview } = renderApp({ groups: [backend], pullRequest: null });
 
@@ -648,18 +563,7 @@ describe("App away from a pull request", () => {
   });
 
   it("shows why stored groups could not be read", async () => {
-    const load = vi.fn<GroupStore["load"]>().mockRejectedValueOnce(new Error("groups[0].members: too small"));
-    render(
-      <App
-        store={{ load, save: vi.fn() }}
-        drafts={{ load: vi.fn().mockResolvedValueOnce(emptyDraft), save: vi.fn() }}
-        directory={{ load: vi.fn().mockResolvedValueOnce(EMPTY_DIRECTORY), save: vi.fn() }}
-        requestReview={vi.fn()}
-        listReviewers={vi.fn()}
-        newId={() => "new-id"}
-        pullRequest={null}
-      />,
-    );
+    renderApp({ pullRequest: null, loadFailure: new Error("groups[0].members: too small") });
 
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Saved groups could not be read: groups[0].members: too small",

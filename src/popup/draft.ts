@@ -9,11 +9,17 @@ export const DRAFT_KEY = "draft";
 const draftSchema = z.object({
   selection: z.array(memberSchema),
   editingGroupId: z.nullable(z.string()),
+  firstRunTicked: z.optional(z.object({ pullRequest: z.string(), logins: z.array(memberSchema) })),
 });
 
 export type Draft = z.infer<typeof draftSchema>;
 
 export const EMPTY_DRAFT: Draft = { selection: [], editingGroupId: null };
+
+export const emptiedDraft = ({ firstRunTicked }: Draft): Draft => ({
+  ...EMPTY_DRAFT,
+  ...(firstRunTicked === undefined ? {} : { firstRunTicked }),
+});
 
 export const loadDraft = async (area: DraftArea): Promise<Draft> => {
   const stored = await area.get(DRAFT_KEY);

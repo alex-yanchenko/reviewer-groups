@@ -5,6 +5,7 @@ import {
   parseCandidatesReply,
   parseCountReply,
   parseLookUpReply,
+  parseRemoveReply,
   parseReply,
 } from "./activeTab";
 
@@ -171,6 +172,24 @@ describe("parseLookUpReply", () => {
     expect(
       parseLookUpReply({ ok: true, author: null, members: [{ member: "ada-dev", candidate: { login: 1 } }] }),
     ).toEqual({ ok: false, error: "The page sent back an unexpected answer." });
+  });
+});
+
+describe("parseRemoveReply", () => {
+  it("accepts who the page removed", () => {
+    const reply = {
+      ok: true,
+      outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [] },
+    };
+
+    expect(parseRemoveReply(reply)).toEqual(reply);
+  });
+
+  it("turns anything else into a failure the popup can show", () => {
+    expect(parseRemoveReply({ ok: true, outcome: { removed: "ada-dev" } })).toEqual({
+      ok: false,
+      error: "The page sent back an unexpected answer.",
+    });
   });
 });
 

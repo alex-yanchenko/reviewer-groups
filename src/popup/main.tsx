@@ -1,11 +1,17 @@
 import { createRoot } from "react-dom/client";
 import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
-import type { ListReviewersReply, LookUpGroupReply, RequestReviewReply } from "../messages";
+import type {
+  ListReviewersReply,
+  LookUpGroupReply,
+  RemoveReviewersReply,
+  RequestReviewReply,
+} from "../messages";
 import {
   countOpenRequestsInTab,
   listReviewersInTab,
   lookUpGroupInTab,
   readActiveTab,
+  removeReviewersInTab,
   requestReviewInTab,
 } from "./activeTab";
 import { App, type DirectoryStore, type DraftStore, type GroupStore } from "./App";
@@ -47,6 +53,11 @@ const mount = async () => {
     popupTab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(popupTab, query);
   const lookUpGroup = (members: string[]): Promise<LookUpGroupReply> =>
     popupTab === null ? Promise.resolve(NO_TAB) : lookUpGroupInTab(popupTab, members);
+  const pullRequest = tab?.pullRequest ?? null;
+  const removeReviewers = (members: string[]): Promise<RemoveReviewersReply> =>
+    popupTab === null || pullRequest === null
+      ? Promise.resolve(NO_TAB)
+      : removeReviewersInTab(popupTab, pullRequest, members);
   const openRequests = new OpenRequestCounter({
     countInTab: (login) =>
       popupTab === null
@@ -60,13 +71,14 @@ const mount = async () => {
       drafts={drafts}
       directory={directory}
       newId={() => crypto.randomUUID()}
-      pullRequest={tab?.pullRequest ?? null}
+      pullRequest={pullRequest}
       requestReview={requestReview}
       listReviewers={listReviewers}
       lookUpGroup={lookUpGroup}
       openRequests={openRequests}
       rotation={rotationStore(localArea)}
       openOptions={() => void chrome.runtime.openOptionsPage()}
+      removeReviewers={removeReviewers}
     />,
   );
 };

@@ -220,6 +220,9 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
           lookUpGroup={() => Promise.resolve({ ok: true, author: null, members: [] })}
           rotation={{ load: () => Promise.resolve({}), record: () => Promise.resolve() }}
           openOptions={() => undefined}
+          removeReviewers={(members) =>
+            Promise.resolve({ ok: true, outcome: { removed: members, notRequested: [], unconfirmed: [] } })
+          }
           openRequests={
             new OpenRequestCounter({
               countInTab: () => Promise.resolve({ ok: true, count: 1 }),

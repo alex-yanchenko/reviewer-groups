@@ -5,6 +5,7 @@ import type { StoredGroups } from "../groups/storage";
 import type {
   ListReviewersReply,
   LookUpGroupReply,
+  RemoveReviewersReply,
   RequestReviewReply,
   ReviewerCandidate,
 } from "../messages";
@@ -22,11 +23,12 @@ import { GroupList } from "./GroupList";
 import { placeForRepository } from "./groupSettings";
 import { PeoplePicker } from "./PeoplePicker";
 import type { OpenRequestCounter } from "./openRequestCounter";
+import { RemoveOffer } from "./RemoveOffer";
 import { ReRequestOffer } from "./ReRequestOffer";
 import type { RotationStore } from "./rotation";
 import { useOpenRequestCounts } from "./useOpenRequestCounts";
 import { useReviewerList } from "./useReviewerList";
-import { useReviewRequests } from "./useReviewRequests";
+import { REMOVE_BUSY, useReviewRequests } from "./useReviewRequests";
 import { rankSearchResults } from "./searchResults";
 import { SelectionBar } from "./SelectionBar";
 
@@ -57,6 +59,7 @@ export interface AppProps {
   lookUpGroup: (members: string[]) => Promise<LookUpGroupReply>;
   rotation: RotationStore;
   openOptions: () => void;
+  removeReviewers: (members: string[]) => Promise<RemoveReviewersReply>;
   newId: () => string;
   pullRequest: string | null;
 }
@@ -96,6 +99,7 @@ export function App({
   lookUpGroup,
   rotation,
   openOptions,
+  removeReviewers,
   newId,
   pullRequest,
 }: AppProps) {
@@ -155,9 +159,10 @@ export function App({
     onFound: rememberFound,
   });
   const counts = useOpenRequestCounts(openRequests, reviewers);
-  const { busy, status, requestFrom, requestGroup } = useReviewRequests({
+  const { busy, status, justRequested, requestFrom, requestGroup, removeJustRequested } = useReviewRequests({
     requestReview,
     lookUpGroup,
+    removeReviewers,
     openRequests,
     rotation,
     onGone: (gone) => updateDirectory((current) => markGone(current, gone)),
@@ -295,6 +300,13 @@ export function App({
           {status}
         </p>
       )}
+
+      <RemoveOffer
+        logins={justRequested}
+        busy={busy === REMOVE_BUSY}
+        locked={busy !== null}
+        onRemove={() => void removeJustRequested()}
+      />
 
       {reviewers.state === "ready" && (
         <ReRequestOffer

@@ -2,6 +2,7 @@ import * as z from "zod/mini";
 import type {
   GroupLookup,
   MemberLookup,
+  RemovalOutcome,
   ReviewedPerson,
   ReviewerCandidate,
   ReviewerList,
@@ -13,6 +14,7 @@ import { isPersonLogin, memberSchema } from "./groups/group";
 export type {
   GroupLookup,
   MemberLookup,
+  RemovalOutcome,
   ReviewedPerson,
   ReviewerCandidate,
   ReviewerList,
@@ -68,6 +70,19 @@ export type LookUpGroupMessage = z.infer<typeof lookUpGroupMessageSchema>;
 
 export type LookUpGroupReply = ({ ok: true } & GroupLookup) | { ok: false; error: string };
 
+export const REMOVE_REVIEWERS = "remove-reviewers";
+
+export const removeReviewersMessageSchema = z.object({
+  type: z.literal(REMOVE_REVIEWERS),
+  session: popupSessionSchema,
+  pullRequest: z.string().check(z.regex(/^[^/\s#]+\/[^/\s#]+#\d+$/)),
+  members: z.array(memberSchema).check(z.minLength(1)),
+});
+
+export type RemoveReviewersMessage = z.infer<typeof removeReviewersMessageSchema>;
+
+export type RemoveReviewersReply = { ok: true; outcome: RemovalOutcome } | { ok: false; error: string };
+
 export type RequestReviewReply = { ok: true; outcome: ReviewRequestOutcome } | { ok: false; error: string };
 
 export const listSentence = (prefix: string, logins: string[], suffix = "") =>
@@ -89,6 +104,13 @@ export const describeOutcome = (outcome: ReviewRequestOutcome): string =>
     outcome.added.length > 0 ? listSentence("Requested ", outcome.added) : "Nobody new to request.",
     listSentence("Already requested: ", outcome.alreadyRequested),
     describeOutcomeProblems(outcome),
+  ]);
+
+export const describeRemoval = (outcome: RemovalOutcome): string =>
+  joinSentences([
+    outcome.removed.length > 0 ? listSentence("Removed ", outcome.removed) : "Nobody was removed.",
+    listSentence("No longer requested: ", outcome.notRequested),
+    listSentence("GitHub did not confirm removing: ", outcome.unconfirmed, " Check the pull request."),
   ]);
 
 export const describeReply = (reply: RequestReviewReply): string =>

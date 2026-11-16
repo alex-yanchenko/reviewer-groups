@@ -4,6 +4,7 @@ import {
   COUNT_OPEN_REQUESTS,
   LIST_REVIEWERS,
   LOOK_UP_GROUP,
+  REMOVE_REVIEWERS,
   REQUEST_REVIEW,
   type CountOpenRequestsMessage,
   type CountOpenRequestsReply,
@@ -11,6 +12,8 @@ import {
   type ListReviewersReply,
   type LookUpGroupMessage,
   type LookUpGroupReply,
+  type RemoveReviewersMessage,
+  type RemoveReviewersReply,
   type RequestReviewMessage,
   type RequestReviewReply,
   type ReviewedPerson,
@@ -120,6 +123,23 @@ export const parseLookUpReply = (raw: unknown): LookUpGroupReply => {
   };
 };
 
+const removeReplySchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    outcome: z.object({
+      removed: z.array(z.string()),
+      notRequested: z.array(z.string()),
+      unconfirmed: z.array(z.string()),
+    }),
+  }),
+  failureSchema,
+]);
+
+export const parseRemoveReply = (raw: unknown): RemoveReviewersReply => {
+  const result = removeReplySchema.safeParse(raw);
+  return result.success ? result.data : UNEXPECTED_ANSWER;
+};
+
 export interface ActiveTab {
   id: number;
   pullRequest: string | null;
@@ -165,6 +185,15 @@ const countReplySchema = z.discriminatedUnion("ok", [
 export const parseCountReply = (raw: unknown): CountOpenRequestsReply => {
   const result = countReplySchema.safeParse(raw);
   return result.success ? result.data : { ok: false, error: "Counts unavailable.", limited: false };
+};
+
+export const removeReviewersInTab = (
+  { id, session }: PopupTab,
+  pullRequest: string,
+  members: string[],
+): Promise<RemoveReviewersReply> => {
+  const message: RemoveReviewersMessage = { type: REMOVE_REVIEWERS, session, pullRequest, members };
+  return sendToPicker(id, message).then(parseRemoveReply, tabUnreachable);
 };
 
 export const lookUpGroupInTab = ({ id, session }: PopupTab, members: string[]): Promise<LookUpGroupReply> => {

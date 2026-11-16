@@ -5,6 +5,7 @@ import type {
   CountOpenRequestsReply,
   ListReviewersReply,
   LookUpGroupReply,
+  RemoveReviewersReply,
   RequestReviewReply,
   ReviewerCandidate,
   ReviewRequestOutcome,
@@ -61,7 +62,11 @@ export interface RenderOptions {
   countReply?: (login: string) => Promise<CountOpenRequestsReply>;
   lookUpGroup?: (members: string[]) => Promise<LookUpGroupReply>;
   lastAsked?: Record<string, number>;
+  removeReviewers?: (members: string[]) => Promise<RemoveReviewersReply>;
 }
+
+const removingEveryone = (members: string[]): Promise<RemoveReviewersReply> =>
+  Promise.resolve({ ok: true, outcome: { removed: members, notRequested: [], unconfirmed: [] } });
 
 const everyoneAvailable = (members: string[]): Promise<LookUpGroupReply> =>
   Promise.resolve({
@@ -103,6 +108,7 @@ export const renderApp = ({
   countReply,
   lookUpGroup = everyoneAvailable,
   lastAsked = {},
+  removeReviewers = removingEveryone,
 }: RenderOptions = {}) => {
   const openOptions = vi.fn<() => void>();
   const recordAsked = vi.fn<RotationStore["record"]>().mockResolvedValue(undefined);
@@ -153,6 +159,7 @@ export const renderApp = ({
       lookUpGroup={lookUpGroup}
       rotation={rotation}
       openOptions={openOptions}
+      removeReviewers={removeReviewers}
       newId={() => "new-id"}
       pullRequest={pullRequest}
     />,

@@ -1,13 +1,22 @@
 import { useState } from "react";
 import type { Group } from "../groups/group";
-import { describeReply, type LookUpGroupReply, type RequestReviewReply } from "../messages";
+import {
+  describeRemoval,
+  describeReply,
+  type LookUpGroupReply,
+  type RemoveReviewersReply,
+  type RequestReviewReply,
+} from "../messages";
 import { askGroup, asksSome, describeAsk } from "./askGroup";
 import type { OpenRequestCounter } from "./openRequestCounter";
 import type { RotationStore } from "./rotation";
 
+export const REMOVE_BUSY = "remove";
+
 export interface ReviewRequestTools {
   requestReview: (members: string[]) => Promise<RequestReviewReply>;
   lookUpGroup: (members: string[]) => Promise<LookUpGroupReply>;
+  removeReviewers: (members: string[]) => Promise<RemoveReviewersReply>;
   openRequests: OpenRequestCounter;
   rotation: RotationStore;
   onGone: (logins: string[]) => void;
@@ -17,6 +26,7 @@ export interface ReviewRequestTools {
 export const useReviewRequests = ({
   requestReview,
   lookUpGroup,
+  removeReviewers,
   openRequests,
   rotation,
   onGone,
@@ -24,9 +34,11 @@ export const useReviewRequests = ({
 }: ReviewRequestTools) => {
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [justRequested, setJustRequested] = useState<string[]>([]);
 
   const afterWriting = (added: string[], gone: string[]) => {
     if (gone.length > 0) onGone(gone);
+    if (added.length > 0) setJustRequested(added);
     openRequests.bump(added);
     void rotation.record(added).catch(() => undefined);
     onWritten();
@@ -64,5 +76,16 @@ export const useReviewRequests = ({
     else await requestFrom(group.id, group.members);
   };
 
-  return { busy, status, requestFrom, requestGroup };
+  const removeJustRequested = async (): Promise<void> => {
+    setBusy(REMOVE_BUSY);
+    setStatus("");
+    const reply = await removeReviewers(justRequested);
+    setBusy(null);
+    setStatus(reply.ok ? describeRemoval(reply.outcome) : reply.error);
+    if (!reply.ok) return;
+    setJustRequested([]);
+    onWritten();
+  };
+
+  return { busy, status, justRequested, requestFrom, requestGroup, removeJustRequested };
 };

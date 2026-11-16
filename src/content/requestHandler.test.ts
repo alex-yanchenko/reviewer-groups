@@ -174,6 +174,36 @@ describe("handleExtensionMessage looking up a group", () => {
   });
 });
 
+describe("handleExtensionMessage removing reviewers", () => {
+  const removeMessage = (pullRequest: string) => ({
+    type: "remove-reviewers",
+    session: "popup-1",
+    pullRequest,
+    members: ["ada-dev"],
+  });
+
+  it("removes the people named from this pull request", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([{ id: 201, login: "ada-dev", selected: true }]);
+
+    expect(await handleExtensionMessage(github.page, removeMessage("acme/widgets#7"))).toEqual({
+      ok: true,
+      outcome: { removed: ["ada-dev"], notRequested: [], unconfirmed: [] },
+    });
+  });
+
+  it("refuses when the tab now shows another pull request than the one requested on", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([{ id: 201, login: "ada-dev", selected: true }]);
+
+    expect(await handleExtensionMessage(github.page, removeMessage("acme/widgets#8"))).toEqual({
+      ok: false,
+      error: "This tab now shows a different pull request, so nobody was removed.",
+    });
+    expect(github.posts).toEqual([]);
+  });
+});
+
 describe("handleExtensionMessage counting open review requests", () => {
   const countMessage = (login: string) => ({ type: "count-open-requests", session: "popup-1", login });
 

@@ -261,3 +261,35 @@ export const requestReviewFrom = (
   page: GitHubPage,
   members: readonly string[],
 ): Promise<ReviewRequestOutcome> => withWriteLock(() => requestLookedUpMembers(page, members));
+
+export interface RemovalOutcome {
+  removed: string[];
+  notRequested: string[];
+  unconfirmed: string[];
+}
+
+const removeRequestedMembers = async (page: GitHubPage, members: readonly string[]) => {
+  await readReviewerForm(page);
+  const current = await currentlyRequested(page);
+  const isRequested = (requested: ReviewerEntry[], member: string) =>
+    requested.some((entry) => sameLogin(entry.login, member));
+  const outcome: RemovalOutcome = {
+    removed: [],
+    notRequested: members.filter((member) => !isRequested(current, member)),
+    unconfirmed: [],
+  };
+  const toRemove = members.filter((member) => isRequested(current, member));
+  if (toRemove.length === 0) return outcome;
+  await sendReviewers(
+    page,
+    current.filter((entry) => !members.some((member) => sameLogin(member, entry.login))),
+  );
+  const confirmed = await currentlyRequested(page);
+  for (const member of toRemove) {
+    (isRequested(confirmed, member) ? outcome.unconfirmed : outcome.removed).push(member);
+  }
+  return outcome;
+};
+
+export const removeReviewersFrom = (page: GitHubPage, members: readonly string[]): Promise<RemovalOutcome> =>
+  withWriteLock(() => removeRequestedMembers(page, members));

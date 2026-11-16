@@ -49,6 +49,20 @@ export const pullRequestPath = (doc: Document): string => {
   return path[0];
 };
 
+export class PullRequestChangedError extends Error {
+  override readonly name = "PullRequestChangedError";
+  constructor() {
+    super("This tab now shows a different pull request, so nobody was removed.");
+  }
+}
+
+const PULL_REQUEST_PARTS = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)$/;
+
+export const isShowingPullRequest = (doc: Document, pullRequest: string): boolean => {
+  const [, owner, repo, number] = PULL_REQUEST_PARTS.exec(pullRequestPath(doc)) ?? [];
+  return `${owner}/${repo}#${number}`.toLowerCase() === pullRequest.toLowerCase();
+};
+
 export const pullRequestUrl = (doc: Document, suffix = ""): URL =>
   new URL(`${pullRequestPath(doc)}${suffix}`, doc.location.origin);
 

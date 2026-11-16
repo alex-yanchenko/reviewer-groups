@@ -5,16 +5,21 @@ import {
   listReviewersMessageSchema,
   LOOK_UP_GROUP,
   lookUpGroupMessageSchema,
+  REMOVE_REVIEWERS,
+  removeReviewersMessageSchema,
   REQUEST_REVIEW,
   requestReviewMessageSchema,
   type CountOpenRequestsReply,
   type ListReviewersReply,
   type LookUpGroupReply,
+  type RemoveReviewersReply,
   type RequestReviewReply,
 } from "../messages";
 import {
   ConversationPageUnreadableError,
+  isShowingPullRequest,
   NotSignedInError,
+  PullRequestChangedError,
   PullRequestPageMissingError,
   ReviewerFormMissingError,
 } from "./conversationPage";
@@ -23,19 +28,22 @@ import {
   GitHubAnswerUnreadableError,
   listReviewers,
   lookUpGroup,
+  removeReviewersFrom,
   RequestInProgressError,
   requestReviewFrom,
   type GitHubPage,
 } from "./githubReviewers";
 import { countOpenReviewRequests, SearchAnswerUnreadableError, SearchLimitedError } from "./openRequests";
 
-type ExtensionReply = RequestReviewReply | ListReviewersReply | CountOpenRequestsReply | LookUpGroupReply;
+type ExtensionReply =
+  RequestReviewReply | ListReviewersReply | CountOpenRequestsReply | LookUpGroupReply | RemoveReviewersReply;
 
 const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([
   REQUEST_REVIEW,
   LIST_REVIEWERS,
   COUNT_OPEN_REQUESTS,
   LOOK_UP_GROUP,
+  REMOVE_REVIEWERS,
 ]);
 
 const EXPECTED_FAILURES = [
@@ -43,6 +51,7 @@ const EXPECTED_FAILURES = [
   GitHubAnswerError,
   GitHubAnswerUnreadableError,
   NotSignedInError,
+  PullRequestChangedError,
   PullRequestPageMissingError,
   RequestInProgressError,
   ReviewerFormMissingError,
@@ -117,11 +126,29 @@ const handleLookUpGroup = (page: GitHubPage, message: unknown): Promise<LookUpGr
   );
 };
 
+const removeFromThisPullRequest = async (page: GitHubPage, pullRequest: string, members: string[]) => {
+  if (!isShowingPullRequest(page.doc, pullRequest)) throw new PullRequestChangedError();
+  return removeReviewersFrom(page, members);
+};
+
+const handleRemoveReviewers = (page: GitHubPage, message: unknown): Promise<RemoveReviewersReply> => {
+  const parsed = removeReviewersMessageSchema.safeParse(message);
+  if (!parsed.success) {
+    return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
+  }
+  page.conversation.enterSession(parsed.data.session);
+  return removeFromThisPullRequest(page, parsed.data.pullRequest, parsed.data.members).then(
+    (outcome) => ({ ok: true, outcome }),
+    replyWithExpectedFailure,
+  );
+};
+
 const HANDLERS: Record<string, (page: GitHubPage, message: unknown) => Promise<ExtensionReply>> = {
   [REQUEST_REVIEW]: handleRequestReview,
   [LIST_REVIEWERS]: handleListReviewers,
   [COUNT_OPEN_REQUESTS]: handleCountOpenRequests,
   [LOOK_UP_GROUP]: handleLookUpGroup,
+  [REMOVE_REVIEWERS]: handleRemoveReviewers,
 };
 
 export const handleExtensionMessage = async (

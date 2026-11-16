@@ -12,6 +12,7 @@ import {
   requestReviewFrom,
   listReviewers,
   lookUpGroup,
+  removeReviewersFrom,
   searchReviewerCandidates,
 } from "./githubReviewers";
 import { createFakeGitHub, mountPullRequestPage, type FakePerson } from "./testing/fakeGitHub";
@@ -419,6 +420,55 @@ describe("searchReviewerCandidates review states", () => {
     const [ada] = await searchReviewerCandidates(github.page, "");
 
     expect(ada?.reviewState).toBe("approved");
+  });
+});
+
+describe("removeReviewersFrom", () => {
+  const team = (): FakePerson[] => [
+    { id: 201, login: "ada-dev", selected: true },
+    { id: 202, login: "grace-ops", selected: true },
+    { id: 203, login: "linus-qa" },
+    { id: 900, login: "acme/web", team: true, selected: true },
+  ];
+
+  it("takes the given people off the request and keeps everyone else requested", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(team());
+
+    const outcome = await removeReviewersFrom(github.page, ["Ada-Dev"]);
+
+    expect(outcome).toEqual({ removed: ["Ada-Dev"], notRequested: [], unconfirmed: [] });
+    expect(github.posts[0]?.getAll("reviewer_user_ids[]")).toEqual(["202"]);
+    expect(github.posts[0]?.getAll("reviewer_team_ids[]")).toEqual(["900"]);
+    expect(github.requestedLogins()).toEqual(["grace-ops", "acme/web"]);
+  });
+
+  it("leaves alone someone no longer requested and posts nothing when nobody is", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(team());
+
+    const outcome = await removeReviewersFrom(github.page, ["linus-qa"]);
+
+    expect(outcome).toEqual({ removed: [], notRequested: ["linus-qa"], unconfirmed: [] });
+    expect(github.posts).toEqual([]);
+  });
+
+  it("reports a removal GitHub does not show afterwards", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(team(), { postIgnored: true });
+
+    const outcome = await removeReviewersFrom(github.page, ["ada-dev"]);
+
+    expect(outcome).toEqual({ removed: [], notRequested: [], unconfirmed: ["ada-dev"] });
+  });
+
+  it("waits its turn behind a request running in the same tab", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(team());
+
+    const request = requestReviewFrom(github.page, ["linus-qa"]);
+    await expect(removeReviewersFrom(github.page, ["ada-dev"])).rejects.toThrow(RequestInProgressError);
+    await request;
   });
 });
 

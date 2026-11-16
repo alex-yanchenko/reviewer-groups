@@ -154,11 +154,15 @@ export interface ReviewerList {
 }
 
 export const listReviewers = async (page: GitHubPage, query: string): Promise<ReviewerList> => {
+  const path = pullRequestPath(page.doc);
   const candidates = await searchReviewerCandidates(page, query);
-  const requested = candidates.filter((candidate) => candidate.requested);
+  const requestedLogins =
+    query === ""
+      ? candidates.filter(({ requested }) => requested).map(({ login }) => login)
+      : (await searchReviewers(page, "", path)).filter(({ selected }) => selected).map(({ login }) => login);
   const reviewed = readReviewsLeft(await readConversation(page)).map((review) => ({
     ...review,
-    requested: requested.some((candidate) => sameLogin(candidate.login, review.login)),
+    requested: requestedLogins.some((login) => sameLogin(login, review.login)),
   }));
   return { candidates, reviewed };
 };

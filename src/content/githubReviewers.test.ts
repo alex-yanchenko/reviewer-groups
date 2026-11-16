@@ -291,6 +291,30 @@ describe("listReviewers", () => {
     expect(list.candidates.map(({ login }) => login)).toEqual(["grace-ops", "linus-qa", "joan-ux"]);
   });
 
+  it("marks a reviewer as requested from GitHub's current requests, whatever the search typed", async () => {
+    mountPullRequestPage(document, {
+      reviewerRows: [
+        { login: "ada-dev", tooltips: ["ada-dev approved these changes"] },
+        { login: "grace-ops", tooltips: ["grace-ops requested changes"] },
+      ],
+    });
+    const github = createFakeGitHub(
+      [
+        { id: 201, login: "ada-dev", selected: true },
+        { id: 202, login: "grace-ops" },
+        { id: 203, login: "linus-qa" },
+      ],
+      { searchFiltersRequested: true },
+    );
+
+    const list = await listReviewers(github.page, "linus");
+
+    expect(list.reviewed).toEqual([
+      { login: "ada-dev", reviewState: "approved", requested: true },
+      { login: "grace-ops", reviewState: "changesRequested", requested: false },
+    ]);
+  });
+
   it("re-requests someone who reviewed by sending them like anyone else not requested", async () => {
     mountPullRequestPage(document, {
       reviewerRows: [{ login: "grace-ops", tooltips: ["grace-ops requested changes"] }],

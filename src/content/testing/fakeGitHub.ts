@@ -28,6 +28,7 @@ export interface FakeGitHubOptions {
   postStatus?: number;
   postIgnored?: boolean;
   dropsOnPost?: string[];
+  searchFiltersRequested?: boolean;
   searchAnswer?: unknown;
   missingAccounts?: string[];
   profileStatus?: number;
@@ -212,7 +213,9 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
   const answerSearch = (url: URL) => {
     if (options.searchAnswer !== undefined) return Response.json(options.searchAnswer);
     const query = url.searchParams.get("q") ?? "";
-    const found = people.filter((person) => person.selected || matchesQuery(person, query));
+    const alwaysListed = (person: FakePerson) =>
+      (person.selected ?? false) && !(options.searchFiltersRequested ?? false);
+    const found = people.filter((person) => alwaysListed(person) || matchesQuery(person, query));
     return Response.json({ suggestions: [], users: found.map(entryFor) });
   };
 

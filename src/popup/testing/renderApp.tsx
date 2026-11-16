@@ -1,3 +1,4 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import type { Group } from "../../groups/group";
@@ -13,6 +14,7 @@ import type {
 import { App, type DirectoryStore, type Draft, type DraftStore, type GroupStore } from "../App";
 import { EMPTY_DIRECTORY, type Directory } from "../directory";
 import { OpenRequestCounter } from "../openRequestCounter";
+import { createPopupQueryClient } from "../queryClient";
 import type { AskedBefore, RotationStore } from "../rotation";
 
 export const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): ReviewerCandidate => ({
@@ -55,6 +57,7 @@ export interface RenderOptions {
   candidates?: ListReviewersReply;
   candidatesAfterRequest?: ListReviewersReply;
   searches?: Record<string, ReviewerCandidate[]>;
+  failedSearches?: Record<string, string>;
   draft?: Draft;
   draftLoad?: Promise<Draft>;
   directory?: Directory;
@@ -105,6 +108,7 @@ export const renderApp = ({
   candidates = { ok: true, candidates: reviewers, reviewed: [] },
   candidatesAfterRequest = candidates,
   searches = {},
+  failedSearches = {},
   draft = emptyDraft,
   draftLoad = Promise.resolve(draft),
   directory = EMPTY_DIRECTORY,
@@ -127,7 +131,8 @@ export const renderApp = ({
   const countInTab = vi
     .fn<(login: string) => Promise<CountOpenRequestsReply>>()
     .mockImplementation(countReply ?? countingFrom(openRequestCounts));
-  const openRequests = new OpenRequestCounter({ countInTab, area: memoryArea() });
+  const queryClient = createPopupQueryClient();
+  const openRequests = new OpenRequestCounter({ countInTab, area: memoryArea(), queryClient });
   const directoryStore = {
     load: vi.fn<DirectoryStore["load"]>().mockResolvedValueOnce(directory),
     save: vi.fn<DirectoryStore["save"]>().mockResolvedValue(undefined),
@@ -157,28 +162,32 @@ export const renderApp = ({
     .fn<(query: string) => Promise<ListReviewersReply>>()
     .mockImplementation((query) =>
       Promise.resolve(
-        query !== ""
-          ? { ok: true, candidates: searches[query] ?? [], reviewed: [] }
-          : requestsSent > 0
-            ? candidatesAfterRequest
-            : candidates,
+        failedSearches[query] !== undefined
+          ? { ok: false, error: failedSearches[query] }
+          : query !== ""
+            ? { ok: true, candidates: searches[query] ?? [], reviewed: [] }
+            : requestsSent > 0
+              ? candidatesAfterRequest
+              : candidates,
       ),
     );
   render(
-    <App
-      store={store}
-      drafts={drafts}
-      directory={directoryStore}
-      requestReview={countedRequest}
-      listReviewers={listReviewers}
-      openRequests={openRequests}
-      lookUpGroup={lookUpGroup}
-      rotation={rotation}
-      openOptions={openOptions}
-      removeReviewers={removeReviewers}
-      newId={() => "new-id"}
-      pullRequest={pullRequest}
-    />,
+    <QueryClientProvider client={queryClient}>
+      <App
+        store={store}
+        drafts={drafts}
+        directory={directoryStore}
+        requestReview={countedRequest}
+        listReviewers={listReviewers}
+        openRequests={openRequests}
+        lookUpGroup={lookUpGroup}
+        rotation={rotation}
+        openOptions={openOptions}
+        removeReviewers={removeReviewers}
+        newId={() => "new-id"}
+        pullRequest={pullRequest}
+      />
+    </QueryClientProvider>,
   );
   return {
     save: store.save,

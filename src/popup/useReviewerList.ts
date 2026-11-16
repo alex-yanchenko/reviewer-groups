@@ -1,3 +1,4 @@
+import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import type { ListReviewersReply, ReviewedPerson, ReviewerCandidate } from "../messages";
 
@@ -13,14 +14,36 @@ export type Reviewers =
     }
   | { state: "failed"; error: string };
 
+interface ReviewerListing {
+  query: string;
+  candidates: ReviewerCandidate[];
+  reviewed: ReviewedPerson[];
+}
+
+const REVIEWER_LIST = "reviewer-list";
+
 const SEARCH_DEBOUNCE_MS = 250;
 
-const reviewersAfterReply = (previous: Reviewers, query: string, reply: ListReviewersReply): Reviewers => {
-  if (reply.ok) {
-    return { state: "ready", query, candidates: reply.candidates, reviewed: reply.reviewed, problem: "" };
-  }
-  if (previous.state === "ready") return { ...previous, problem: reply.error };
-  return { state: "failed", error: reply.error };
+class ReviewerListUnreadableError extends Error {
+  override readonly name = "ReviewerListUnreadableError";
+}
+
+const useSettledSearch = (search: string): string => {
+  const [settled, setSettled] = useState(search.trim());
+  useEffect(() => {
+    const query = search.trim();
+    const timer = setTimeout(() => setSettled(query), query === "" ? 0 : SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+  return settled;
+};
+
+const lastListing = (queryClient: QueryClient, pullRequest: string | null): ReviewerListing | undefined => {
+  const [latest] = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: [REVIEWER_LIST, pullRequest], predicate: (query) => query.state.data !== undefined })
+    .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt);
+  return latest === undefined ? undefined : queryClient.getQueryData<ReviewerListing>(latest.queryKey);
 };
 
 export const useReviewerList = ({
@@ -36,30 +59,32 @@ export const useReviewerList = ({
   ready: boolean;
   onFound: (candidates: ReviewerCandidate[]) => void;
 }) => {
-  const [reviewers, setReviewers] = useState<Reviewers>({ state: pullRequest ? "loading" : "absent" });
-  const [round, setRound] = useState(0);
+  const queryClient = useQueryClient();
+  const query = useSettledSearch(search);
+  const listed = useQuery({
+    queryKey: [REVIEWER_LIST, pullRequest, query],
+    queryFn: async ({ signal }): Promise<ReviewerListing> => {
+      const reply = await listReviewers(query);
+      if (!reply.ok) throw new ReviewerListUnreadableError(reply.error);
+      if (!signal.aborted) onFound(reply.candidates);
+      return { query, candidates: reply.candidates, reviewed: reply.reviewed };
+    },
+    enabled: pullRequest !== null && ready,
+    placeholderData: keepPreviousData,
+  });
 
-  useEffect(() => {
-    if (!pullRequest || !ready) return;
-    let stillWanted = true;
-    const query = search.trim();
-    const timer = setTimeout(
-      () => {
-        void listReviewers(query).then((reply) => {
-          if (!stillWanted) return;
-          setReviewers((previous) => reviewersAfterReply(previous, query, reply));
-          if (reply.ok) onFound(reply.candidates);
-        });
-      },
-      query === "" ? 0 : SEARCH_DEBOUNCE_MS,
-    );
-    return () => {
-      stillWanted = false;
-      clearTimeout(timer);
-    };
-  }, [listReviewers, pullRequest, search, ready, onFound, round]);
+  const listing = listed.data ?? lastListing(queryClient, pullRequest);
+  const reviewers: Reviewers =
+    listing !== undefined
+      ? { state: "ready", ...listing, problem: listed.error?.message ?? "" }
+      : listed.error !== null
+        ? { state: "failed", error: listed.error.message }
+        : { state: pullRequest ? "loading" : "absent" };
 
-  const readAgain = useCallback(() => setRound((previous) => previous + 1), []);
+  const readAgain = useCallback(
+    () => void queryClient.invalidateQueries({ queryKey: [REVIEWER_LIST] }),
+    [queryClient],
+  );
 
   return { reviewers, readAgain };
 };

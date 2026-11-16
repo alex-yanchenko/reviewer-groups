@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CountOpenRequestsReply } from "../messages";
 import { OPEN_REQUEST_COUNTS_KEY, OpenRequestCounter, type CountCacheArea } from "./openRequestCounter";
+import { createPopupQueryClient } from "./queryClient";
 
 const TEN_MINUTES = 10 * 60 * 1000;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const buildArea = (stored: Record<string, unknown> = {}) => {
   const get = vi.fn<CountCacheArea["get"]>().mockResolvedValue(stored);
@@ -23,19 +28,25 @@ const buildCounter = (
   }: { stored?: Record<string, unknown>; clock?: { now: number } } = {},
 ) => {
   const { area, set } = buildArea(stored);
-  const counter = new OpenRequestCounter({ countInTab, area, now: () => clock.now });
-  return { counter, set, clock };
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(clock.now);
+  const counter = new OpenRequestCounter({ countInTab, area, queryClient: createPopupQueryClient() });
+  const tickBy = (milliseconds: number) => {
+    clock.now += milliseconds;
+    vi.setSystemTime(clock.now);
+  };
+  return { counter, set, tickBy };
 };
 
 describe("OpenRequestCounter", () => {
   it("asks the page for a count once and reuses it for ten minutes", async () => {
     const countInTab = counting({ "ada-dev": 2 });
-    const { counter, clock } = buildCounter(countInTab);
+    const { counter, tickBy } = buildCounter(countInTab);
 
     expect(await counter.count("ada-dev")).toBe(2);
-    clock.now += TEN_MINUTES - 1;
+    tickBy(TEN_MINUTES - 1);
     expect(await counter.count("Ada-Dev")).toBe(2);
-    clock.now += 1;
+    tickBy(1);
     expect(await counter.count("ada-dev")).toBe(2);
 
     expect(countInTab).toHaveBeenCalledTimes(2);

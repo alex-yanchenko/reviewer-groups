@@ -1,3 +1,4 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
 import { loadGroups, saveGroups, type StorageArea } from "../../groups/storage";
 import type {
@@ -18,6 +19,7 @@ import { App, type DirectoryStore, type DraftStore, type GroupStore } from "../.
 import { loadDirectory, saveDirectory } from "../../popup/directory";
 import { loadDraft, saveDraft } from "../../popup/draft";
 import { OpenRequestCounter } from "../../popup/openRequestCounter";
+import { createPopupQueryClient } from "../../popup/queryClient";
 import { rotationStore } from "../../popup/rotation";
 import "../../popup/popup.css";
 
@@ -60,28 +62,32 @@ const mount = async () => {
     popupTab === null || pullRequest === null
       ? Promise.resolve(NO_TAB)
       : removeReviewersInTab(popupTab, pullRequest, members);
+  const queryClient = createPopupQueryClient();
   const openRequests = new OpenRequestCounter({
     countInTab: (login) =>
       popupTab === null
         ? Promise.resolve({ ...NO_TAB, limited: false })
         : countOpenRequestsInTab(popupTab, login),
     area: sessionArea,
+    queryClient,
   });
   createRoot(container).render(
-    <App
-      store={store}
-      drafts={drafts}
-      directory={directory}
-      newId={() => crypto.randomUUID()}
-      pullRequest={pullRequest}
-      requestReview={requestReview}
-      listReviewers={listReviewers}
-      lookUpGroup={lookUpGroup}
-      openRequests={openRequests}
-      rotation={rotationStore(localArea)}
-      openOptions={() => void chrome.runtime.openOptionsPage()}
-      removeReviewers={removeReviewers}
-    />,
+    <QueryClientProvider client={queryClient}>
+      <App
+        store={store}
+        drafts={drafts}
+        directory={directory}
+        newId={() => crypto.randomUUID()}
+        pullRequest={pullRequest}
+        requestReview={requestReview}
+        listReviewers={listReviewers}
+        lookUpGroup={lookUpGroup}
+        openRequests={openRequests}
+        rotation={rotationStore(localArea)}
+        openOptions={() => void chrome.runtime.openOptionsPage()}
+        removeReviewers={removeReviewers}
+      />
+    </QueryClientProvider>,
   );
 };
 

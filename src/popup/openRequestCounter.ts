@@ -1,3 +1,5 @@
+import { matchQuery, type Query, type QueryCacheNotifyEvent, type QueryClient } from "@tanstack/react-query";
+import PQueue from "p-queue";
 import * as z from "zod/mini";
 import { isPersonLogin } from "../groups/group";
 import type { StorageArea } from "../groups/storage";
@@ -8,6 +10,8 @@ export const OPEN_REQUEST_COUNTS_KEY = "openRequestCounts";
 const COUNT_LIFETIME_MS = 10 * 60 * 1000;
 const LIMITED_PROBLEM = "GitHub is limiting searches; counts paused.";
 const UNAVAILABLE_PROBLEM = "Counts unavailable.";
+const OPEN_REQUEST_COUNT = "open-request-count";
+const URGENT = 1;
 
 export type CountCacheArea = Pick<StorageArea, "get" | "set">;
 
@@ -21,32 +25,40 @@ export interface CountSnapshot {
   problem: string;
 }
 
-interface CountJob {
-  login: string;
-  urgent: boolean;
-  resolve: (count: number | null) => void;
+class CountNotReadError extends Error {
+  override readonly name = "CountNotReadError";
 }
 
-const readStoredCounts = (raw: unknown): Record<string, CachedCount> => {
+const countKey = (login: string) => [OPEN_REQUEST_COUNT, login.toLowerCase()];
+
+const readStoredCounts = (raw: unknown): [string, CachedCount][] => {
   const stored = storedCountsSchema.safeParse(raw);
-  if (!stored.success) return {};
-  return Object.fromEntries(
-    Object.entries(stored.data).flatMap(([login, entry]) => {
-      const cached = cachedCountSchema.safeParse(entry);
-      return cached.success ? [[login.toLowerCase(), cached.data]] : [];
-    }),
-  );
+  if (!stored.success) return [];
+  return Object.entries(stored.data).flatMap(([login, entry]) => {
+    const cached = cachedCountSchema.safeParse(entry);
+    return cached.success ? [[login.toLowerCase(), cached.data]] : [];
+  });
+};
+
+const isCountOutcome = (event: QueryCacheNotifyEvent): boolean =>
+  event.type === "updated" &&
+  (event.action.type === "success" || event.action.type === "error") &&
+  matchQuery({ queryKey: [OPEN_REQUEST_COUNT] }, event.query);
+
+const freshCount = (query: Query): [string, CachedCount][] => {
+  const [, login] = query.queryKey;
+  const count = query.state.data;
+  return typeof login === "string" && typeof count === "number" && !query.isStaleByTime(COUNT_LIFETIME_MS)
+    ? [[login, { count, at: query.state.dataUpdatedAt }]]
+    : [];
 };
 
 export class OpenRequestCounter {
   private readonly countInTab: (login: string) => Promise<CountOpenRequestsReply>;
   private readonly area: CountCacheArea;
-  private readonly now: () => number;
-  private readonly loaded: Promise<void>;
-  private readonly queue: CountJob[] = [];
+  private readonly queryClient: QueryClient;
+  private readonly queue = new PQueue({ concurrency: 1, autoStart: false });
   private readonly listeners = new Set<() => void>();
-  private cache: Record<string, CachedCount> = {};
-  private working = false;
   private limited = false;
   private failed = false;
   private current: CountSnapshot = { counts: {}, problem: "" };
@@ -54,33 +66,45 @@ export class OpenRequestCounter {
   constructor({
     countInTab,
     area,
-    now = Date.now,
+    queryClient,
   }: {
     countInTab: (login: string) => Promise<CountOpenRequestsReply>;
     area: CountCacheArea;
-    now?: () => number;
+    queryClient: QueryClient;
   }) {
     this.countInTab = countInTab;
     this.area = area;
-    this.now = now;
-    this.loaded = area.get(OPEN_REQUEST_COUNTS_KEY).then(
-      (stored) => {
-        this.cache = readStoredCounts(stored[OPEN_REQUEST_COUNTS_KEY]);
+    this.queryClient = queryClient;
+    void area
+      .get(OPEN_REQUEST_COUNTS_KEY)
+      .then(
+        (stored) => this.restore(readStoredCounts(stored[OPEN_REQUEST_COUNTS_KEY])),
+        () => undefined,
+      )
+      .finally(() => {
+        queryClient.getQueryCache().subscribe((event) => {
+          if (!isCountOutcome(event)) return;
+          this.persist();
+          this.announce();
+        });
         this.announce();
-      },
-      () => undefined,
-    );
+        this.queue.start();
+      });
   }
 
   count(login: string, { urgent = false }: { urgent?: boolean } = {}): Promise<number | null> {
     if (!isPersonLogin(login)) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      const job = { login, urgent, resolve };
-      const firstOrdinary = this.queue.findIndex((queued) => !queued.urgent);
-      if (urgent && firstOrdinary >= 0) this.queue.splice(firstOrdinary, 0, job);
-      else this.queue.push(job);
-      void this.work();
-    });
+    return this.queue
+      .add(
+        () =>
+          this.queryClient.fetchQuery({
+            queryKey: countKey(login),
+            queryFn: () => this.countNow(login),
+            staleTime: COUNT_LIFETIME_MS,
+          }),
+        { priority: urgent ? URGENT : 0 },
+      )
+      .catch(() => null);
   }
 
   bump(logins: readonly string[]): void {
@@ -91,17 +115,6 @@ export class OpenRequestCounter {
     this.shift(logins, -1);
   }
 
-  private shift(logins: readonly string[], by: number): void {
-    for (const login of logins) {
-      const cached = this.freshCount(login.toLowerCase());
-      if (cached !== undefined) {
-        this.cache[login.toLowerCase()] = { ...cached, count: Math.max(0, cached.count + by) };
-      }
-    }
-    this.persist();
-    this.announce();
-  }
-
   snapshot = (): CountSnapshot => this.current;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -109,57 +122,47 @@ export class OpenRequestCounter {
     return () => this.listeners.delete(listener);
   };
 
-  private async work(): Promise<void> {
-    if (this.working) return;
-    this.working = true;
-    try {
-      await this.loaded;
-      for (let job = this.queue.shift(); job !== undefined; job = this.queue.shift()) {
-        job.resolve(await this.countNow(job.login));
-      }
-    } finally {
-      this.working = false;
+  private restore(stored: [string, CachedCount][]): void {
+    for (const [login, { count, at }] of stored) {
+      this.queryClient.setQueryData(countKey(login), count, { updatedAt: at });
     }
   }
 
-  private freshCount(key: string): CachedCount | undefined {
-    const cached = this.cache[key];
-    return cached !== undefined && this.now() - cached.at < COUNT_LIFETIME_MS ? cached : undefined;
+  private shift(logins: readonly string[], by: number): void {
+    for (const login of logins) {
+      const query = this.queryClient.getQueryCache().find({ queryKey: countKey(login), exact: true });
+      for (const [, { count, at }] of query === undefined ? [] : freshCount(query)) {
+        this.queryClient.setQueryData(countKey(login), Math.max(0, count + by), { updatedAt: at });
+      }
+    }
   }
 
-  private async countNow(login: string): Promise<number | null> {
-    const key = login.toLowerCase();
-    const cached = this.freshCount(key);
-    if (cached !== undefined) return cached.count;
-    if (this.limited) return null;
+  private async countNow(login: string): Promise<number> {
+    if (this.limited) throw new CountNotReadError(LIMITED_PROBLEM);
     const reply = await this.countInTab(login);
     if (reply.ok) {
       this.failed = false;
-      this.cache[key] = { count: reply.count, at: this.now() };
-      this.persist();
-    } else if (reply.limited) {
-      this.limited = true;
-    } else {
-      this.failed = true;
+      return reply.count;
     }
-    this.announce();
-    return reply.ok ? reply.count : null;
+    if (reply.limited) this.limited = true;
+    else this.failed = true;
+    throw new CountNotReadError(reply.error);
   }
 
-  private unexpiredEntries(): [string, CachedCount][] {
-    return Object.keys(this.cache).flatMap((key) => {
-      const cached = this.freshCount(key);
-      return cached === undefined ? [] : [[key, cached] as [string, CachedCount]];
-    });
+  private freshCounts(): [string, CachedCount][] {
+    return this.queryClient
+      .getQueryCache()
+      .findAll({ queryKey: [OPEN_REQUEST_COUNT] })
+      .flatMap(freshCount);
   }
 
   private persist(): void {
-    const unexpired = Object.fromEntries(this.unexpiredEntries());
-    void this.area.set({ [OPEN_REQUEST_COUNTS_KEY]: unexpired }).catch(() => undefined);
+    const fresh = Object.fromEntries(this.freshCounts());
+    void this.area.set({ [OPEN_REQUEST_COUNTS_KEY]: fresh }).catch(() => undefined);
   }
 
   private announce(): void {
-    const counts = Object.fromEntries(this.unexpiredEntries().map(([key, { count }]) => [key, count]));
+    const counts = Object.fromEntries(this.freshCounts().map(([login, { count }]) => [login, count]));
     const problem = this.limited ? LIMITED_PROBLEM : this.failed ? UNAVAILABLE_PROBLEM : "";
     this.current = { counts, problem };
     for (const listener of this.listeners) listener();

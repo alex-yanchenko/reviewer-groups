@@ -103,6 +103,20 @@ describe("App on a pull request", () => {
     expect(await screen.findByText("Nobody matches “zzz”.")).toBeTruthy();
   });
 
+  it("keeps the people already listed and says why when a search fails", async () => {
+    renderApp({ groups: [backend], failedSearches: { mo: "GitHub answered 500." } });
+    await screen.findByRole("list", { name: "People" });
+
+    fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "mo" } });
+
+    expect((await screen.findByRole("alert")).textContent).toBe("GitHub answered 500.");
+    expect(screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"))).toEqual([
+      "mona",
+      "hubot",
+      "acme/backend",
+    ]);
+  });
+
   it("requests review from the ticked people and clears the ticks", async () => {
     const requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>().mockResolvedValueOnce({
       ok: true,

@@ -1,3 +1,4 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import pWaitFor from "p-wait-for";
 import { createRoot } from "react-dom/client";
 import type { Group } from "../src/groups/group";
@@ -6,6 +7,7 @@ import { App } from "../src/popup/App";
 import { EMPTY_DIRECTORY } from "../src/popup/directory";
 import type { Draft } from "../src/popup/draft";
 import { OpenRequestCounter } from "../src/popup/openRequestCounter";
+import { createPopupQueryClient } from "../src/popup/queryClient";
 import "../src/popup/popup.css";
 import "./scenes.css";
 
@@ -212,6 +214,7 @@ const socialScene: Scene = {
 
 const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "social") => {
   document.body.classList.add(layout);
+  const queryClient = createPopupQueryClient();
   createRoot(root).render(
     <div className="stage">
       <section className="pitch">
@@ -221,37 +224,40 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
         {layout === "social" && <p className="repo">github.com/alex-yanchenko/reviewer-groups</p>}
       </section>
       <section className="window">
-        <App
-          store={{
-            load: () => Promise.resolve({ groups: scene.groups, unreadable: 0, unreadableNames: [] }),
-            save: () => Promise.resolve(),
-          }}
-          drafts={{ load: () => Promise.resolve(scene.draft), save: () => Promise.resolve() }}
-          directory={{ load: () => Promise.resolve(EMPTY_DIRECTORY), save: () => Promise.resolve() }}
-          requestReview={requestReview}
-          listReviewers={listReviewers}
-          lookUpGroup={() => Promise.resolve({ ok: true, author: null, members: [] })}
-          rotation={{
-            load: () => Promise.resolve({}),
-            record: () => Promise.resolve({}),
-            restore: () => Promise.resolve(),
-          }}
-          openOptions={() => undefined}
-          removeReviewers={(members) =>
-            Promise.resolve({
-              ok: true,
-              outcome: { removed: members, notRequested: [], unconfirmed: [], dropped: [] },
-            })
-          }
-          openRequests={
-            new OpenRequestCounter({
-              countInTab: countOpenRequests,
-              area: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
-            })
-          }
-          newId={() => "demo"}
-          pullRequest="northwind/storefront#482"
-        />
+        <QueryClientProvider client={queryClient}>
+          <App
+            store={{
+              load: () => Promise.resolve({ groups: scene.groups, unreadable: 0, unreadableNames: [] }),
+              save: () => Promise.resolve(),
+            }}
+            drafts={{ load: () => Promise.resolve(scene.draft), save: () => Promise.resolve() }}
+            directory={{ load: () => Promise.resolve(EMPTY_DIRECTORY), save: () => Promise.resolve() }}
+            requestReview={requestReview}
+            listReviewers={listReviewers}
+            lookUpGroup={() => Promise.resolve({ ok: true, author: null, members: [] })}
+            rotation={{
+              load: () => Promise.resolve({}),
+              record: () => Promise.resolve({}),
+              restore: () => Promise.resolve(),
+            }}
+            openOptions={() => undefined}
+            removeReviewers={(members) =>
+              Promise.resolve({
+                ok: true,
+                outcome: { removed: members, notRequested: [], unconfirmed: [], dropped: [] },
+              })
+            }
+            openRequests={
+              new OpenRequestCounter({
+                countInTab: countOpenRequests,
+                area: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
+                queryClient,
+              })
+            }
+            newId={() => "demo"}
+            pullRequest="northwind/storefront#482"
+          />
+        </QueryClientProvider>
       </section>
     </div>,
   );

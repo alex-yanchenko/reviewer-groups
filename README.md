@@ -49,7 +49,7 @@ Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpack
 - These endpoints and pages are GitHub internals, not a public API, and can change without notice. Everything that touches them is in `src/content/` (`githubReviewers.ts`, `conversationPage.ts`, `openRequests.ts`); `src/content/testing/fakeGitHub.ts` is the behaviour the tests assume.
 - Review states are read from the English tooltips in GitHub's Reviewers box.
 - Re-requesting someone who reviewed by sending their id as an ordinary reviewer has not yet been checked against a live pull request. Anyone GitHub does not show as requested afterwards is reported as not confirmed.
-- The pull request's author is read from the page header (`.gh-header-meta a.author`), which has not been checked against GitHub's current pull request page. When it is not found, nobody is left out as the author.
+- The pull request's author is read from the first author link in the Conversation timeline (`.js-discussion a.author`). GitHub's reviewer list does not offer the author either, so when the link is not found the author still cannot be picked.
 - Open request counts cover only pull requests you can see. When each person was last asked is kept per device, and two tabs asking at once can pick the same person.
 
 ## Screenshots

@@ -130,7 +130,7 @@ const reviewStateOf = (row: Element): ReviewState | undefined => {
   return REVIEW_STATE_TOOLTIPS.find(([pattern]) => tooltips.some((text) => pattern.test(text)))?.[1];
 };
 
-const PULL_REQUEST_AUTHOR = ".gh-header-meta a.author";
+const PULL_REQUEST_AUTHOR = ".js-discussion a.author";
 
 export const readAuthor = (doc: Document): string | null => {
   const author = doc.querySelector(PULL_REQUEST_AUTHOR)?.textContent?.trim() ?? "";

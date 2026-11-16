@@ -115,14 +115,18 @@ const buildSidebar = (
 };
 
 const buildPullRequestHeader = (doc: Document, author: string) => {
-  const header = doc.createElement("div");
-  header.className = "gh-header-meta";
+  const discussion = doc.createElement("div");
+  discussion.className = "js-discussion";
   const link = doc.createElement("a");
-  link.className = "author Link--secondary";
+  link.className = "author Link--primary";
   link.href = `/${author}`;
   link.textContent = author;
-  header.append(link, " wants to merge 2 commits");
-  return header;
+  const laterCommenter = doc.createElement("a");
+  laterCommenter.className = "author Link--primary";
+  laterCommenter.href = "/grace-ops";
+  laterCommenter.textContent = "grace-ops";
+  discussion.append(link, " opened this pull request", laterCommenter, " commented");
+  return discussion;
 };
 
 export const mountPullRequestPage = (

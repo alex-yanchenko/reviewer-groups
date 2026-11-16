@@ -64,4 +64,23 @@ export const splitGroupOptions = ({ repos, ask, ...stored }: Group): [StoredGrou
   { ...(repos !== undefined && repos.length > 0 ? { repos } : {}), ...(ask !== undefined ? { ask } : {}) },
 ];
 
-export const hasOptions = (options: GroupOptions): boolean => Object.keys(options).length > 0;
+const storedOptionFieldsSchema = z.record(z.string(), z.unknown());
+
+const OPTION_NAMES = ["repos", "ask"] as const;
+
+const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+export const mergeGroupOptions = (storedOptions: unknown, options: GroupOptions): Record<string, unknown> => {
+  const stored = storedOptionFieldsSchema.safeParse(storedOptions);
+  const merged: Record<string, unknown> = stored.success ? { ...stored.data } : {};
+  const understood = readGroupOptions(storedOptions);
+  for (const name of OPTION_NAMES) {
+    const wanted = options[name];
+    if (wanted === undefined) {
+      if (understood[name] !== undefined) Reflect.deleteProperty(merged, name);
+    } else if (!sameValue(wanted, understood[name])) {
+      merged[name] = wanted;
+    }
+  }
+  return merged;
+};

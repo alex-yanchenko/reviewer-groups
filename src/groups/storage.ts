@@ -1,5 +1,5 @@
 import * as z from "zod/mini";
-import { hasOptions, readGroupOptions, readStoredGroup, splitGroupOptions, type Group } from "./group";
+import { mergeGroupOptions, readGroupOptions, readStoredGroup, splitGroupOptions, type Group } from "./group";
 
 export const GROUP_ORDER_KEY = "groupOrder";
 export const GROUP_KEY_PREFIX = "group:";
@@ -54,10 +54,11 @@ const unreadableStoredIds = (stored: Record<string, unknown>, saving: Set<string
       readStoredGroup(stored[groupKey(id)]) === undefined,
   );
 
-const groupItems = (group: Group): [string, unknown][] => {
+const groupItems = (group: Group, stored: Record<string, unknown>): [string, unknown][] => {
   const [storedGroup, options] = splitGroupOptions(group);
   const items: [string, unknown][] = [[groupKey(group.id), storedGroup]];
-  return hasOptions(options) ? [...items, [optionsKey(group.id), options]] : items;
+  const mergedOptions = mergeGroupOptions(stored[optionsKey(group.id)], options);
+  return Object.keys(mergedOptions).length > 0 ? [...items, [optionsKey(group.id), mergedOptions]] : items;
 };
 
 const SYNC_QUOTA_BYTES = 102_400;
@@ -93,7 +94,7 @@ const itemBytes = (key: string, value: unknown): number =>
 
 const checkSyncQuota = (stored: Record<string, unknown>, items: Record<string, unknown>, groups: Group[]) => {
   for (const group of groups) {
-    for (const [key, value] of groupItems(group)) {
+    for (const [key, value] of groupItems(group, stored)) {
       if (itemBytes(key, value) > SYNC_QUOTA_BYTES_PER_ITEM) throw new SyncItemTooLargeError(group.name);
     }
   }
@@ -109,7 +110,7 @@ export const saveGroups = async (area: StorageArea, groups: Group[]): Promise<vo
   const keptIds = [...groups.map((group) => group.id), ...unreadableStoredIds(stored, saving)];
   const items: Record<string, unknown> = {
     [GROUP_ORDER_KEY]: keptIds,
-    ...Object.fromEntries(groups.flatMap(groupItems)),
+    ...Object.fromEntries(groups.flatMap((group) => groupItems(group, stored))),
   };
   checkSyncQuota(stored, items, groups);
   await area.set(items);

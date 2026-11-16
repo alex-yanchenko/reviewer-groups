@@ -80,9 +80,107 @@ describe("loadGroups", () => {
   });
 });
 
-describe("group options keys", () => {
-  it("never start with the group key prefix, which the first release's save deletes when it does not know the id", () => {
-    expect(`${GROUP_OPTIONS_KEY_PREFIX}g1`.startsWith(GROUP_KEY_PREFIX)).toBe(false);
+describe("group options across releases", () => {
+  const inMemoryArea = (initial: Record<string, unknown>) => {
+    const store = { ...initial };
+    const area: StorageArea = {
+      get: () => Promise.resolve({ ...store }),
+      set: (items) => {
+        Object.assign(store, items);
+        return Promise.resolve();
+      },
+      remove: (keys) => {
+        for (const key of keys) Reflect.deleteProperty(store, key);
+        return Promise.resolve();
+      },
+    };
+    return { area, store };
+  };
+
+  const saveLikeTheFirstRelease = (store: Record<string, unknown>, groups: Group[]) => {
+    const keptKeys = groups.map((group) => `${GROUP_KEY_PREFIX}${group.id}`);
+    for (const key of Object.keys(store)) {
+      if (key.startsWith(GROUP_KEY_PREFIX) && !keptKeys.includes(key)) Reflect.deleteProperty(store, key);
+    }
+    Reflect.deleteProperty(store, LEGACY_GROUPS_KEY);
+    store[GROUP_ORDER_KEY] = groups.map((group) => group.id);
+    for (const { id, name, members } of groups) store[`${GROUP_KEY_PREFIX}${id}`] = { id, name, members };
+  };
+
+  const laterVersionOptions = { repos: ["acme/*"], ask: 2, muted: true, schedule: { days: ["mon"] } };
+
+  it("keeps a later version's options through a save by the first release and a save by this one", async () => {
+    const { area, store } = inMemoryArea({
+      [GROUP_ORDER_KEY]: ["g1"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: laterVersionOptions,
+    });
+
+    saveLikeTheFirstRelease(store, [{ ...backend, name: "Backend team" }]);
+    const { groups } = await loadGroups(area);
+    await saveGroups(area, groups);
+
+    expect(store[`${GROUP_OPTIONS_KEY_PREFIX}g1`]).toEqual(laterVersionOptions);
+    expect(groups).toEqual([{ ...backend, name: "Backend team", repos: ["acme/*"], ask: 2 }]);
+  });
+
+  it("keeps an option value it cannot read untouched when the group is saved", async () => {
+    const stored = { repos: ["acme/*"], ask: "every-other-day" };
+    const { area, store } = inMemoryArea({
+      [GROUP_ORDER_KEY]: ["g1"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: stored,
+    });
+
+    const { groups } = await loadGroups(area);
+    await saveGroups(
+      area,
+      groups.map((group) => ({ ...group, name: "Backend team" })),
+    );
+
+    expect(store[`${GROUP_OPTIONS_KEY_PREFIX}g1`]).toEqual(stored);
+  });
+
+  it("keeps a repo list's unreadable entries while its readable ones are unchanged", async () => {
+    const stored = { repos: ["acme/*", { glob: "acme/**" }] };
+    const { area, store } = inMemoryArea({
+      [GROUP_ORDER_KEY]: ["g1"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: stored,
+    });
+
+    const { groups } = await loadGroups(area);
+    await saveGroups(area, groups);
+
+    expect(store[`${GROUP_OPTIONS_KEY_PREFIX}g1`]).toEqual(stored);
+  });
+
+  it("still lets a person change and clear the options they can see", async () => {
+    const { area, store } = inMemoryArea({
+      [GROUP_ORDER_KEY]: ["g1"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: laterVersionOptions,
+    });
+
+    await saveGroups(area, [{ ...backend, ask: 3 }]);
+
+    expect(store[`${GROUP_OPTIONS_KEY_PREFIX}g1`]).toEqual({
+      ask: 3,
+      muted: true,
+      schedule: { days: ["mon"] },
+    });
+  });
+
+  it("removes the options key once nothing is left in it", async () => {
+    const { area, store } = inMemoryArea({
+      [GROUP_ORDER_KEY]: ["g1"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: { ask: 2 },
+    });
+
+    await saveGroups(area, [backend]);
+
+    expect(`${GROUP_OPTIONS_KEY_PREFIX}g1` in store).toBe(false);
   });
 });
 

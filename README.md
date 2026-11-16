@@ -36,7 +36,7 @@ The extension uses the github.com pages and endpoints that GitHub's own Reviewer
 ```bash
 pnpm install
 pnpm build          # writes the loadable extension to .output/chrome-mv3/
-pnpm dev            # development build in .output/chrome-mv3-dev/, rebuilt and reloaded on change
+pnpm dev            # opens Chrome with a development build from .output/chrome-mv3-dev/, rebuilt and reloaded on change
 pnpm check          # prettier, eslint, tsc, vitest
 pnpm package        # .output/reviewer-groups-<version>.zip for the Chrome Web Store
 pnpm screenshots    # regenerates docs/screenshots with invented people (needs Google Chrome)
@@ -47,6 +47,8 @@ pnpm screenshots    # regenerates docs/screenshots with invented people (needs G
 Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick the `.output/chrome-mv3/` folder.
 
 In development mode WXT adds the `tabs` permission, access to its dev server on `localhost` and a background script that reloads the extension on change. None of these are in the production build.
+
+CI also runs `web-ext lint` on the built extension and fails on any error except `ADDON_ID_REQUIRED`, which asks for a Firefox add-on ID (`browser_specific_settings.gecko.id`) that a Chrome-only manifest does not carry.
 
 ## Release
 

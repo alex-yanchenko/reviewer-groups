@@ -133,10 +133,22 @@ const waitForInput = async (label: string): Promise<HTMLInputElement> => {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
 
+const openRequestsByLogin: Record<string, number> = {
+  "river-chen": 2,
+  "priya-nair": 5,
+  "sam-okafor": 1,
+  "maya-kowalski": 3,
+  "noor-haddad": 0,
+  "leo-martins": 4,
+};
+
+const countOpenRequests = (login: string) =>
+  Promise.resolve({ ok: true as const, count: openRequestsByLogin[login] ?? 1 });
+
 const pickScene: Scene = {
   title: "Tick reviewers. Request them all at once.",
   caption: "Open it on a pull request: everyone GitHub lets you request is listed, teams included.",
-  groups: [],
+  groups,
   draft: { selection: ["river-chen", "priya-nair", "northwind/frontend"], editingGroupId: null },
   play: async () => {
     await waitForButton("Request 3");
@@ -158,7 +170,7 @@ const scenes: Record<string, Scene> = {
   search: {
     title: "Search everyone who can review.",
     caption: "Not only the suggestions: search finds anyone GitHub would let you request.",
-    groups: [],
+    groups,
     draft: { selection: ["maya-kowalski"], editingGroupId: null },
     play: async () => {
       typeInto(await waitForInput("Search people"), "ma");
@@ -225,7 +237,7 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
           }
           openRequests={
             new OpenRequestCounter({
-              countInTab: () => Promise.resolve({ ok: true, count: 1 }),
+              countInTab: countOpenRequests,
               area: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
             })
           }

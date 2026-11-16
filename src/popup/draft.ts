@@ -1,10 +1,6 @@
 import * as z from "zod/mini";
 import { memberSchema } from "../groups/group";
-import type { StorageArea } from "../groups/storage";
-
-export type DraftArea = Pick<StorageArea, "get" | "set">;
-
-export const DRAFT_KEY = "draft";
+import type { StoredItem } from "./storedItems";
 
 const draftSchema = z.object({
   selection: z.array(memberSchema),
@@ -21,10 +17,9 @@ export const emptiedDraft = ({ firstRunTicked }: Draft): Draft => ({
   ...(firstRunTicked === undefined ? {} : { firstRunTicked }),
 });
 
-export const loadDraft = async (area: DraftArea): Promise<Draft> => {
-  const stored = await area.get(DRAFT_KEY);
-  const result = draftSchema.safeParse(stored[DRAFT_KEY]);
+export const loadDraft = async (item: StoredItem): Promise<Draft> => {
+  const result = draftSchema.safeParse(await item.getValue());
   return result.success ? result.data : EMPTY_DRAFT;
 };
 
-export const saveDraft = (area: DraftArea, draft: Draft): Promise<void> => area.set({ [DRAFT_KEY]: draft });
+export const saveDraft = (item: StoredItem, draft: Draft): Promise<void> => item.setValue(draft);

@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { fakeBrowser } from "wxt/testing/fake-browser";
 import type { ReviewerCandidate } from "../messages";
 import {
-  DIRECTORY_KEY,
   EMPTY_DIRECTORY,
   isGone,
   loadDirectory,
@@ -9,8 +9,12 @@ import {
   rememberPeople,
   rememberedPeople,
   saveDirectory,
-  type DirectoryArea,
 } from "./directory";
+import { DIRECTORY_KEY, directoryItem } from "./storedItems";
+
+beforeEach(() => {
+  fakeBrowser.reset();
+});
 
 const mona = { login: "mona", description: "Mona Lisa", avatarUrl: null, team: false };
 const team = { login: "acme/backend", description: "Backend", avatarUrl: null, team: true };
@@ -26,52 +30,45 @@ const found = (login: string, overrides: Partial<ReviewerCandidate> = {}): Revie
   ...overrides,
 });
 
-const buildArea = (stored: Record<string, unknown>) => {
-  const get = vi.fn<DirectoryArea["get"]>().mockResolvedValueOnce(stored);
-  const set = vi.fn<DirectoryArea["set"]>().mockResolvedValueOnce(undefined);
-  return { area: { get, set } satisfies DirectoryArea, get, set };
-};
+const storeDirectory = (directory: unknown) => fakeBrowser.storage.local.set({ [DIRECTORY_KEY]: directory });
 
 describe("loadDirectory", () => {
   it("returns the people and missing logins saved before", async () => {
     const saved = { people: { mona, "acme/backend": team }, gone: ["renamed-person"] };
-    const { area, get } = buildArea({ [DIRECTORY_KEY]: saved });
+    await storeDirectory(saved);
 
-    expect(await loadDirectory(area)).toEqual(saved);
-    expect(get).toHaveBeenCalledWith(DIRECTORY_KEY);
+    expect(await loadDirectory(directoryItem)).toEqual(saved);
   });
 
   it("drops a saved person it cannot read and keeps the rest", async () => {
-    const { area } = buildArea({
-      [DIRECTORY_KEY]: { people: { mona, broken: { login: 42 } }, gone: [] },
-    });
+    await storeDirectory({ people: { mona, broken: { login: 42 } }, gone: [] });
 
-    expect(await loadDirectory(area)).toEqual({ people: { mona }, gone: [] });
+    expect(await loadDirectory(directoryItem)).toEqual({ people: { mona }, gone: [] });
   });
 
   it("drops a saved avatar that is not on GitHub's avatar host", async () => {
-    const { area } = buildArea({
-      [DIRECTORY_KEY]: { people: { mona: { ...mona, avatarUrl: "https://tracker.test/p.png" } }, gone: [] },
+    await storeDirectory({
+      people: { mona: { ...mona, avatarUrl: "https://tracker.test/p.png" } },
+      gone: [],
     });
 
-    expect(await loadDirectory(area)).toEqual({ people: { mona }, gone: [] });
+    expect(await loadDirectory(directoryItem)).toEqual({ people: { mona }, gone: [] });
   });
 
   it("starts empty when nothing was saved or the saved value is not a directory", async () => {
-    expect(await loadDirectory(buildArea({}).area)).toEqual(EMPTY_DIRECTORY);
-    expect(await loadDirectory(buildArea({ [DIRECTORY_KEY]: "nonsense" }).area)).toEqual(EMPTY_DIRECTORY);
+    expect(await loadDirectory(directoryItem)).toEqual(EMPTY_DIRECTORY);
+    await storeDirectory("nonsense");
+    expect(await loadDirectory(directoryItem)).toEqual(EMPTY_DIRECTORY);
   });
 });
 
 describe("saveDirectory", () => {
   it("writes the directory under its key", async () => {
-    const { area, set } = buildArea({});
     const directory = { people: { mona }, gone: ["renamed-person"] };
 
-    await saveDirectory(area, directory);
+    await saveDirectory(directoryItem, directory);
 
-    expect(set).toHaveBeenCalledTimes(1);
-    expect(set).toHaveBeenCalledWith({ [DIRECTORY_KEY]: directory });
+    expect(await fakeBrowser.storage.local.get(null)).toEqual({ [DIRECTORY_KEY]: directory });
   });
 });
 

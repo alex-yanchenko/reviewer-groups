@@ -21,11 +21,11 @@ import { loadDraft, saveDraft } from "../../popup/draft";
 import { OpenRequestCounter } from "../../popup/openRequestCounter";
 import { createPopupQueryClient } from "../../popup/queryClient";
 import { rotationStore } from "../../popup/rotation";
+import { directoryItem, draftItem, lastAskedItem } from "../../popup/storedItems";
 import "../../popup/popup.css";
 
 const syncArea: StorageArea = chrome.storage.sync;
 const sessionArea: StorageArea = chrome.storage.session;
-const localArea: StorageArea = chrome.storage.local;
 
 const store: GroupStore = {
   load: () => loadGroups(syncArea),
@@ -33,13 +33,13 @@ const store: GroupStore = {
 };
 
 const drafts: DraftStore = {
-  load: () => loadDraft(sessionArea),
-  save: (draft) => saveDraft(sessionArea, draft),
+  load: () => loadDraft(draftItem),
+  save: (draft) => saveDraft(draftItem, draft),
 };
 
 const directory: DirectoryStore = {
-  load: () => loadDirectory(localArea),
-  save: (people) => saveDirectory(localArea, people),
+  load: () => loadDirectory(directoryItem),
+  save: (people) => saveDirectory(directoryItem, people),
 };
 
 const NO_TAB = { ok: false, error: "No active tab." } as const;
@@ -83,7 +83,7 @@ const mount = async () => {
         listReviewers={listReviewers}
         lookUpGroup={lookUpGroup}
         openRequests={openRequests}
-        rotation={rotationStore(localArea)}
+        rotation={rotationStore(lastAskedItem)}
         openOptions={() => void chrome.runtime.openOptionsPage()}
         removeReviewers={removeReviewers}
       />

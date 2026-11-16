@@ -1,12 +1,8 @@
 import * as z from "zod/mini";
 import { memberSchema } from "../groups/group";
-import type { StorageArea } from "../groups/storage";
 import type { ReviewerCandidate } from "../messages";
 import { trustedAvatarUrl } from "./avatar";
-
-export const DIRECTORY_KEY = "directory";
-
-export type DirectoryArea = Pick<StorageArea, "get" | "set">;
+import type { StoredItem } from "./storedItems";
 
 const rememberedPersonSchema = z.object({
   login: memberSchema,
@@ -38,8 +34,8 @@ const readPerson = ([key, raw]: [string, unknown]): [string, RememberedPerson][]
     : [];
 };
 
-export const loadDirectory = async (area: DirectoryArea): Promise<Directory> => {
-  const stored = storedDirectorySchema.safeParse((await area.get(DIRECTORY_KEY))[DIRECTORY_KEY]);
+export const loadDirectory = async (item: StoredItem): Promise<Directory> => {
+  const stored = storedDirectorySchema.safeParse(await item.getValue());
   if (!stored.success) return EMPTY_DIRECTORY;
   return {
     people: Object.fromEntries(Object.entries(stored.data.people).flatMap(readPerson)),
@@ -47,8 +43,8 @@ export const loadDirectory = async (area: DirectoryArea): Promise<Directory> => 
   };
 };
 
-export const saveDirectory = (area: DirectoryArea, directory: Directory): Promise<void> =>
-  area.set({ [DIRECTORY_KEY]: directory });
+export const saveDirectory = (item: StoredItem, directory: Directory): Promise<void> =>
+  item.setValue(directory);
 
 export const rememberPeople = (directory: Directory, found: ReviewerCandidate[]): Directory => {
   const foundKeys = new Set(found.map((candidate) => loginKey(candidate.login)));

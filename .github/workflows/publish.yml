@@ -58,7 +58,7 @@ jobs:
       - name: Upload to the Chrome Web Store and submit for review
         env:
           EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
-          PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
           CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}

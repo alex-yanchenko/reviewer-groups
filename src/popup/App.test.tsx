@@ -36,7 +36,10 @@ describe("App on a pull request", () => {
   });
 
   it("asks GitHub for the people matching the search and lists only them", async () => {
-    const { listReviewers } = renderApp({ searches: { lisa: [reviewers[0] ?? candidate("mona")] } });
+    const { listReviewers } = renderApp({
+      groups: [backend],
+      searches: { lisa: [reviewers[0] ?? candidate("mona")] },
+    });
     await screen.findByRole("list", { name: "People" });
 
     fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "lisa" } });
@@ -50,6 +53,7 @@ describe("App on a pull request", () => {
 
   it("shows only the people who match the search, not everyone GitHub adds because they are already requested", async () => {
     renderApp({
+      groups: [backend],
       searches: {
         Noor: [
           candidate("river-chen", { description: "River Chen", requested: true }),
@@ -104,7 +108,7 @@ describe("App on a pull request", () => {
       ok: true,
       outcome: outcome({ added: ["mona", "hubot"] }),
     });
-    const { saveDraft } = renderApp({ requestReview });
+    const { saveDraft } = renderApp({ groups: [backend], requestReview });
     await tick("mona");
     await tick("hubot");
 
@@ -121,7 +125,7 @@ describe("App on a pull request", () => {
     const requestReview = vi
       .fn<(members: string[]) => Promise<RequestReviewReply>>()
       .mockResolvedValueOnce({ ok: false, error: "GitHub's Reviewers picker did not load its list." });
-    renderApp({ requestReview });
+    renderApp({ groups: [backend], requestReview });
     await tick("mona");
 
     fireEvent.click(screen.getByRole("button", { name: "Request 1" }));
@@ -162,7 +166,7 @@ describe("App on a pull request", () => {
   });
 
   it("records every tick so closing the dropdown loses nothing", async () => {
-    const { saveDraft } = renderApp();
+    const { saveDraft } = renderApp({ groups: [backend] });
 
     await tick("hubot");
 
@@ -171,7 +175,7 @@ describe("App on a pull request", () => {
   });
 
   it("restores the ticks from the last time the dropdown was open", async () => {
-    renderApp({ draft: { selection: ["hubot"], editingGroupId: null } });
+    renderApp({ groups: [backend], draft: { selection: ["hubot"], editingGroupId: null } });
 
     await screen.findByRole("list", { name: "People" });
 

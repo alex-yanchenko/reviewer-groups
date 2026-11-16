@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { withOptions, type Group, type GroupOptions } from "../groups/group";
 import { repositoryOf } from "../groups/repoPatterns";
-import type { StoredGroups } from "../groups/storage";
 import type {
   ListReviewersReply,
   LookUpGroupReply,
@@ -9,15 +8,9 @@ import type {
   RequestReviewReply,
   ReviewerCandidate,
 } from "../messages";
-import {
-  EMPTY_DIRECTORY,
-  isGone,
-  markGone,
-  rememberedPeople,
-  rememberPeople,
-  type Directory,
-} from "./directory";
+import { isGone, markGone, rememberedPeople, rememberPeople } from "./directory";
 import { EMPTY_DRAFT, type Draft } from "./draft";
+import { FirstRunIntro, requestedHere, useFirstRunTicks } from "./FirstRun";
 import { GroupForm, type GroupDraft } from "./GroupForm";
 import { GroupList } from "./GroupList";
 import { placeForRepository } from "./groupSettings";
@@ -26,28 +19,15 @@ import type { OpenRequestCounter } from "./openRequestCounter";
 import { RemoveOffer } from "./RemoveOffer";
 import { ReRequestOffer } from "./ReRequestOffer";
 import type { RotationStore } from "./rotation";
+import { rankSearchResults } from "./searchResults";
+import { isTicked, tickLogins, toggleLogin } from "./selection";
+import { SelectionBar } from "./SelectionBar";
 import { useOpenRequestCounts } from "./useOpenRequestCounts";
 import { useReviewerList } from "./useReviewerList";
 import { REMOVE_BUSY, useReviewRequests } from "./useReviewRequests";
-import { rankSearchResults } from "./searchResults";
-import { SelectionBar } from "./SelectionBar";
+import { useSavedState, type DirectoryStore, type DraftStore, type GroupStore } from "./useSavedState";
 
-export type { Draft };
-
-export interface GroupStore {
-  load(): Promise<StoredGroups>;
-  save(groups: Group[]): Promise<void>;
-}
-
-export interface DraftStore {
-  load(): Promise<Draft>;
-  save(draft: Draft): Promise<void>;
-}
-
-export interface DirectoryStore {
-  load(): Promise<Directory>;
-  save(directory: Directory): Promise<void>;
-}
+export type { DirectoryStore, Draft, DraftStore, GroupStore };
 
 export interface AppProps {
   store: GroupStore;
@@ -70,20 +50,6 @@ const SELECTION_BUSY = "selection";
 
 const RE_REQUEST_BUSY = "re-request";
 
-const toggleLogin = (selection: string[], login: string): string[] =>
-  selection.some((ticked) => ticked.toLowerCase() === login.toLowerCase())
-    ? selection.filter((ticked) => ticked.toLowerCase() !== login.toLowerCase())
-    : [...selection, login];
-
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-const describeUnreadableGroups = (count: number) => {
-  if (count === 0) return "";
-  return count === 1
-    ? "1 saved group could not be read and was left out."
-    : `${count} saved groups could not be read and were left out.`;
-};
-
 const matchesSearch = (person: ReviewerCandidate, search: string) => {
   const needle = search.trim().toLowerCase();
   return person.login.toLowerCase().includes(needle) || person.description.toLowerCase().includes(needle);
@@ -103,48 +69,21 @@ export function App({
   newId,
   pullRequest,
 }: AppProps) {
-  const [groups, setGroups] = useState<Group[] | null>(null);
-  const [loadProblem, setLoadProblem] = useState("");
   const [typedEditor, setTypedEditor] = useState<TypedEditor>({ kind: "closed" });
-  const [notice, setNotice] = useState("");
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [search, setSearch] = useState("");
-  const [directory, setDirectory] = useState<Directory>(EMPTY_DIRECTORY);
-  const [directoryReady, setDirectoryReady] = useState(false);
-  const directoryRef = useRef<Directory>(EMPTY_DIRECTORY);
-
-  useEffect(() => {
-    store.load().then(
-      ({ groups: readable, unreadable }) => {
-        setGroups(readable);
-        setNotice(describeUnreadableGroups(unreadable));
-      },
-      (error: unknown) => setLoadProblem(`Saved groups could not be read: ${messageOf(error)}`),
-    );
-    void drafts.load().then((saved) => setDraft((current) => (current === EMPTY_DRAFT ? saved : current)));
-    directoryStore
-      .load()
-      .then(
-        (saved) => {
-          directoryRef.current = saved;
-          setDirectory(saved);
-        },
-        (error: unknown) => setNotice(`Remembered people could not be read: ${messageOf(error)}`),
-      )
-      .finally(() => setDirectoryReady(true));
-  }, [store, drafts, directoryStore]);
-
-  const updateDirectory = useCallback(
-    (change: (current: Directory) => Directory) => {
-      const next = change(directoryRef.current);
-      directoryRef.current = next;
-      setDirectory(next);
-      void directoryStore
-        .save(next)
-        .catch((error: unknown) => setNotice(`Remembered people could not be saved: ${messageOf(error)}`));
-    },
-    [directoryStore],
-  );
+  const {
+    groups,
+    unreadable,
+    loadProblem,
+    notice,
+    draft,
+    draftReady,
+    directory,
+    directoryReady,
+    updateDirectory,
+    updateDraft,
+    persist,
+  } = useSavedState({ store, drafts, directoryStore });
 
   const rememberFound = useCallback(
     (found: ReviewerCandidate[]) => updateDirectory((current) => rememberPeople(current, found)),
@@ -169,6 +108,14 @@ export function App({
     onWritten: readAgain,
   });
 
+  const firstRun = groups !== null && groups.length === 0 && unreadable === 0;
+  useFirstRunTicks({
+    active: firstRun,
+    reviewers,
+    draftReady,
+    tick: (logins) => updateDraft({ ...draft, selection: tickLogins(draft.selection, logins) }),
+  });
+
   const remembered = rememberedPeople(directory);
   const picker =
     reviewers.state === "ready"
@@ -185,21 +132,6 @@ export function App({
   const pickerWillShow = picker !== null || reviewers.state === "loading";
   const editingGroup =
     draft.editingGroupId === null ? undefined : groups?.find((group) => group.id === draft.editingGroupId);
-
-  const updateDraft = (next: Draft) => {
-    setDraft(next);
-    void drafts.save(next);
-  };
-
-  const persist = (next: Group[]) => {
-    const previous = groups;
-    setGroups(next);
-    setNotice("");
-    void store.save(next).catch((error: unknown) => {
-      setGroups(previous);
-      setNotice(`Groups could not be saved: ${messageOf(error)}`);
-    });
-  };
 
   const requestSelection = async () => {
     const reply = await requestFrom(SELECTION_BUSY, draft.selection);
@@ -272,6 +204,13 @@ export function App({
         </p>
       )}
 
+      {firstRun && (
+        <FirstRunIntro
+          onPullRequest={pullRequest !== null}
+          ticked={requestedHere(reviewers).filter((login) => isTicked(draft.selection, login)).length}
+        />
+      )}
+
       {groups !== null && groups.length > 0 && (
         <GroupList
           placed={placeForRepository(groups, repositoryOf(pullRequest))}
@@ -291,9 +230,11 @@ export function App({
         />
       )}
 
-      {groups !== null && groups.length === 0 && !pickerWillShow && typedEditor.kind === "closed" && (
-        <p className="empty">No groups yet.</p>
-      )}
+      {groups !== null &&
+        groups.length === 0 &&
+        !firstRun &&
+        !pickerWillShow &&
+        typedEditor.kind === "closed" && <p className="empty">No groups yet.</p>}
 
       {status && (
         <p className="status" role="status">

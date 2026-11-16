@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  countOpenRequestsInTab,
   describePullRequest,
   listReviewersInTab,
   parseCandidatesReply,
@@ -220,28 +221,44 @@ describe("parseCountReply", () => {
 describe("listReviewersInTab", () => {
   const popupTab = { id: 7, session: "popup-1" };
 
-  const stubChrome = (sendMessage: ReturnType<typeof vi.fn>) => {
+  type ChromeAnswer = { response: unknown } | { lastError: string };
+
+  const unreachable: ChromeAnswer = { lastError: "Receiving end does not exist." };
+
+  const stubChrome = (...answers: ChromeAnswer[]) => {
+    const runtime: { lastError?: { message: string } } = {};
+    const sendMessage = vi.fn(
+      (
+        _tabId: number,
+        _message: { type: string; data: unknown },
+        _options: unknown,
+        callback: (response: unknown) => void,
+      ) => {
+        const answer = answers.shift() ?? unreachable;
+        if ("lastError" in answer) runtime.lastError = { message: answer.lastError };
+        callback("response" in answer ? answer.response : undefined);
+        delete runtime.lastError;
+      },
+    );
     const executeScript = vi.fn().mockResolvedValue([]);
-    vi.stubGlobal("chrome", { tabs: { sendMessage }, scripting: { executeScript } });
-    return executeScript;
+    vi.stubGlobal("chrome", { runtime, tabs: { sendMessage }, scripting: { executeScript } });
+    return { sendMessage, executeScript };
   };
 
   it("asks the script already in the tab without injecting it again", async () => {
-    const sendMessage = vi.fn().mockResolvedValueOnce({ ok: true, candidates: [] });
-    const executeScript = stubChrome(sendMessage);
+    const { sendMessage, executeScript } = stubChrome({ response: { res: { ok: true, candidates: [] } } });
 
     expect(await listReviewersInTab(popupTab, "mo")).toEqual({ ok: true, candidates: [], reviewed: [] });
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith(7, { type: "list-reviewers", session: "popup-1", query: "mo" });
+    expect(sendMessage.mock.calls.map(([tabId, { type, data }]) => ({ tabId, type, data }))).toEqual([
+      { tabId: 7, type: "list-reviewers", data: { session: "popup-1", query: "mo" } },
+    ]);
     expect(executeScript).not.toHaveBeenCalled();
   });
 
   it("injects the script when the tab has none yet, then asks again", async () => {
-    const sendMessage = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("Receiving end does not exist."))
-      .mockResolvedValueOnce({ ok: true, candidates: [] });
-    const executeScript = stubChrome(sendMessage);
+    const { sendMessage, executeScript } = stubChrome(unreachable, {
+      response: { res: { ok: true, candidates: [] } },
+    });
 
     expect(await listReviewersInTab(popupTab, "")).toEqual({ ok: true, candidates: [], reviewed: [] });
     expect(executeScript).toHaveBeenCalledTimes(1);
@@ -250,13 +267,49 @@ describe("listReviewersInTab", () => {
   });
 
   it("says when Chrome cannot reach the tab at all", async () => {
-    const sendMessage = vi.fn().mockRejectedValue(new Error("Receiving end does not exist."));
-    stubChrome(sendMessage);
+    stubChrome(unreachable, unreachable);
 
     expect(await listReviewersInTab(popupTab, "")).toEqual({
       ok: false,
       error:
         "Chrome could not reach this tab (Receiving end does not exist.). Reload the pull request and try again.",
+    });
+  });
+
+  it("says the page could not finish when the script failed inside the tab, without injecting it again", async () => {
+    const { sendMessage, executeScript } = stubChrome({
+      response: {
+        err: {
+          name: "PageCouldNotFinishError",
+          message: "The page could not finish: Failed to fetch",
+          stack: "",
+        },
+      },
+    });
+
+    expect(await listReviewersInTab(popupTab, "")).toEqual({
+      ok: false,
+      error: "The page could not finish: Failed to fetch",
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("calls counts unavailable when the script failed inside the tab while counting", async () => {
+    stubChrome({
+      response: {
+        err: {
+          name: "PageCouldNotFinishError",
+          message: "The page could not finish: Failed to fetch",
+          stack: "",
+        },
+      },
+    });
+
+    expect(await countOpenRequestsInTab(popupTab, "ada-dev")).toEqual({
+      ok: false,
+      error: "Counts unavailable.",
+      limited: false,
     });
   });
 });

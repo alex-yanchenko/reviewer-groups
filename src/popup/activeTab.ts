@@ -10,17 +10,13 @@ import {
   removeReviewersReplySchema,
   REQUEST_REVIEW,
   requestReviewReplySchema,
-  type CountOpenRequestsMessage,
   type CountOpenRequestsReply,
-  type ListReviewersMessage,
   type ListReviewersReply,
-  type LookUpGroupMessage,
   type LookUpGroupReply,
-  type RemoveReviewersMessage,
   type RemoveReviewersReply,
-  type RequestReviewMessage,
   type RequestReviewReply,
 } from "../messages";
+import { isPageFailure, pageMessenger } from "../pageMessenger";
 
 const PULL_REQUEST_URL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)(?:[/?#]|$)/;
 
@@ -50,6 +46,11 @@ export const parseLookUpReply = parseOr<LookUpGroupReply>(lookUpGroupReplySchema
 
 export const parseRemoveReply = parseOr<RemoveReviewersReply>(removeReviewersReplySchema, UNEXPECTED_ANSWER);
 
+export const parseCountReply = parseOr<CountOpenRequestsReply>(
+  countOpenRequestsReplySchema,
+  COUNTS_UNAVAILABLE,
+);
+
 export interface ActiveTab {
   id: number;
   pullRequest: string | null;
@@ -61,18 +62,19 @@ export const readActiveTab = async (): Promise<ActiveTab | null> => {
   return { id: tab.id, pullRequest: describePullRequest(tab.url) };
 };
 
-const tabUnreachable = (error: unknown) => ({
+const describeFailureToAnswer = (error: unknown) => ({
   ok: false as const,
-  error: `Chrome could not reach this tab (${error instanceof Error ? error.message : String(error)}). Reload the pull request and try again.`,
+  error: isPageFailure(error)
+    ? error.message
+    : `Chrome could not reach this tab (${error instanceof Error ? error.message : String(error)}). Reload the pull request and try again.`,
 });
 
-const injectPickerAndSend = async (tabId: number, message: unknown): Promise<unknown> => {
-  await chrome.scripting.executeScript({ target: { tabId }, files: [PICKER_SCRIPT] });
-  return chrome.tabs.sendMessage(tabId, message);
-};
-
-const sendToPicker = (tabId: number, message: unknown): Promise<unknown> =>
-  chrome.tabs.sendMessage(tabId, message).catch(() => injectPickerAndSend(tabId, message));
+const sendToPicker = (tabId: number, send: () => Promise<unknown>): Promise<unknown> =>
+  send().catch(async (error: unknown) => {
+    if (isPageFailure(error)) throw error;
+    await chrome.scripting.executeScript({ target: { tabId }, files: [PICKER_SCRIPT] });
+    return send();
+  });
 
 export interface PopupTab {
   id: number;
@@ -83,42 +85,38 @@ export const requestReviewInTab = (
   { id, session }: PopupTab,
   pullRequest: string,
   members: string[],
-): Promise<RequestReviewReply> => {
-  const message: RequestReviewMessage = { type: REQUEST_REVIEW, session, pullRequest, members };
-  return sendToPicker(id, message).then(parseReply, tabUnreachable);
-};
-
-export const parseCountReply = parseOr<CountOpenRequestsReply>(
-  countOpenRequestsReplySchema,
-  COUNTS_UNAVAILABLE,
-);
+): Promise<RequestReviewReply> =>
+  sendToPicker(id, () =>
+    pageMessenger.sendMessage(REQUEST_REVIEW, { session, pullRequest, members }, id),
+  ).then(parseReply, describeFailureToAnswer);
 
 export const removeReviewersInTab = (
   { id, session }: PopupTab,
   pullRequest: string,
   members: string[],
-): Promise<RemoveReviewersReply> => {
-  const message: RemoveReviewersMessage = { type: REMOVE_REVIEWERS, session, pullRequest, members };
-  return sendToPicker(id, message).then(parseRemoveReply, tabUnreachable);
-};
+): Promise<RemoveReviewersReply> =>
+  sendToPicker(id, () =>
+    pageMessenger.sendMessage(REMOVE_REVIEWERS, { session, pullRequest, members }, id),
+  ).then(parseRemoveReply, describeFailureToAnswer);
 
-export const lookUpGroupInTab = ({ id, session }: PopupTab, members: string[]): Promise<LookUpGroupReply> => {
-  const message: LookUpGroupMessage = { type: LOOK_UP_GROUP, session, members };
-  return sendToPicker(id, message).then(parseLookUpReply, tabUnreachable);
-};
+export const lookUpGroupInTab = ({ id, session }: PopupTab, members: string[]): Promise<LookUpGroupReply> =>
+  sendToPicker(id, () => pageMessenger.sendMessage(LOOK_UP_GROUP, { session, members }, id)).then(
+    parseLookUpReply,
+    describeFailureToAnswer,
+  );
 
 export const countOpenRequestsInTab = (
   { id, session }: PopupTab,
   login: string,
-): Promise<CountOpenRequestsReply> => {
-  const message: CountOpenRequestsMessage = { type: COUNT_OPEN_REQUESTS, session, login };
-  return sendToPicker(id, message).then(parseCountReply, (error: unknown) => ({
-    ...tabUnreachable(error),
-    limited: false,
-  }));
-};
+): Promise<CountOpenRequestsReply> =>
+  sendToPicker(id, () => pageMessenger.sendMessage(COUNT_OPEN_REQUESTS, { session, login }, id)).then(
+    parseCountReply,
+    (error: unknown) =>
+      isPageFailure(error) ? COUNTS_UNAVAILABLE : { ...describeFailureToAnswer(error), limited: false },
+  );
 
-export const listReviewersInTab = ({ id, session }: PopupTab, query: string): Promise<ListReviewersReply> => {
-  const message: ListReviewersMessage = { type: LIST_REVIEWERS, session, query };
-  return sendToPicker(id, message).then(parseCandidatesReply, tabUnreachable);
-};
+export const listReviewersInTab = ({ id, session }: PopupTab, query: string): Promise<ListReviewersReply> =>
+  sendToPicker(id, () => pageMessenger.sendMessage(LIST_REVIEWERS, { session, query }, id)).then(
+    parseCandidatesReply,
+    describeFailureToAnswer,
+  );

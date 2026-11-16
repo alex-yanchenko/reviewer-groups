@@ -13,7 +13,6 @@ const popupSessionSchema = z.string().check(z.minLength(1), z.maxLength(100));
 const pullRequestReferenceSchema = z.string().check(z.regex(/^[^/\s#]+\/[^/\s#]+#\d+$/));
 
 export const requestReviewMessageSchema = z.object({
-  type: z.literal(REQUEST_REVIEW),
   session: popupSessionSchema,
   pullRequest: pullRequestReferenceSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
@@ -22,7 +21,6 @@ export const requestReviewMessageSchema = z.object({
 export type RequestReviewMessage = z.infer<typeof requestReviewMessageSchema>;
 
 export const listReviewersMessageSchema = z.object({
-  type: z.literal(LIST_REVIEWERS),
   session: popupSessionSchema,
   query: z.string().check(z.maxLength(100)),
 });
@@ -30,7 +28,6 @@ export const listReviewersMessageSchema = z.object({
 export type ListReviewersMessage = z.infer<typeof listReviewersMessageSchema>;
 
 export const countOpenRequestsMessageSchema = z.object({
-  type: z.literal(COUNT_OPEN_REQUESTS),
   session: popupSessionSchema,
   login: memberSchema.check(z.refine(isPersonLogin)),
 });
@@ -38,7 +35,6 @@ export const countOpenRequestsMessageSchema = z.object({
 export type CountOpenRequestsMessage = z.infer<typeof countOpenRequestsMessageSchema>;
 
 export const lookUpGroupMessageSchema = z.object({
-  type: z.literal(LOOK_UP_GROUP),
   session: popupSessionSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
 });
@@ -46,7 +42,6 @@ export const lookUpGroupMessageSchema = z.object({
 export type LookUpGroupMessage = z.infer<typeof lookUpGroupMessageSchema>;
 
 export const removeReviewersMessageSchema = z.object({
-  type: z.literal(REMOVE_REVIEWERS),
   session: popupSessionSchema,
   pullRequest: pullRequestReferenceSchema,
   members: z.array(memberSchema).check(z.minLength(1)),

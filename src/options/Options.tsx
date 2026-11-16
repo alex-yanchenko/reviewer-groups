@@ -1,6 +1,12 @@
 import { useState, type ChangeEvent } from "react";
-import { exportGroups, GROUP_FILE_NAME, mergeImportedGroups, readGroupFile } from "../groups/groupFile";
-import { joinSentences } from "../messages";
+import {
+  exportGroups,
+  GROUP_FILE_NAME,
+  mergeImportedGroups,
+  readGroupFile,
+  type ImportMerge,
+} from "../groups/groupFile";
+import { joinSentences, listSentence } from "../messages";
 import type { GroupStore } from "../popup/App";
 
 export interface OptionsProps {
@@ -15,10 +21,41 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 
 const countOfGroups = (count: number) => (count === 1 ? "1 group" : `${count} groups`);
 
+const MAX_FILE_BYTES = 1_048_576;
+
+const countStored = async (
+  store: GroupStore,
+  addedIds: string[],
+): Promise<{ stored: number } | { error: unknown }> => {
+  try {
+    const { groups } = await store.load();
+    return { stored: groups.filter((group) => addedIds.includes(group.id)).length };
+  } catch (error) {
+    return { error };
+  }
+};
+
+const importedSentences = async (store: GroupStore, merge: ImportMerge): Promise<string[]> => {
+  if (merge.addedIds.length === 0) return ["Imported 0 groups."];
+  const counted = await countStored(store, merge.addedIds);
+  if ("error" in counted) {
+    return [
+      `Imported ${countOfGroups(merge.addedIds.length)}.`,
+      `Reading the groups back failed, so this count is unconfirmed: ${messageOf(counted.error)}`,
+    ];
+  }
+  const notStored = merge.addedIds.length - counted.stored;
+  return [
+    `Imported ${countOfGroups(counted.stored)}.`,
+    notStored > 0 ? `Did not store ${countOfGroups(notStored)}.` : "",
+  ];
+};
+
 const importReport = async (store: GroupStore, text: string, newId: () => string): Promise<Report> => {
   const reading = readGroupFile(text);
   if (!reading.ok) return { kind: "problem", text: reading.error };
-  const merge = mergeImportedGroups((await store.load()).groups, reading.groups, newId);
+  const before = await store.load();
+  const merge = mergeImportedGroups(before.groups, reading.groups, newId);
   if (merge.addedIds.length > 0) {
     try {
       await store.save(merge.groups);
@@ -26,12 +63,12 @@ const importReport = async (store: GroupStore, text: string, newId: () => string
       return { kind: "problem", text: `Nothing was imported. ${messageOf(error)}` };
     }
   }
-  const stored = (await store.load()).groups.filter((group) => merge.addedIds.includes(group.id)).length;
   return {
     kind: "status",
     text: joinSentences([
-      `Imported ${countOfGroups(stored)}.`,
+      ...(await importedSentences(store, merge)),
       merge.skipped > 0 ? `Skipped ${merge.skipped} already saved.` : "",
+      listSentence("Could not be read, so not checked for duplicates: ", before.unreadableNames),
     ]),
   };
 };
@@ -41,9 +78,15 @@ export function Options({ store, download, newId }: OptionsProps) {
 
   const exportAll = async () => {
     try {
-      const { groups } = await store.load();
+      const { groups, unreadableNames } = await store.load();
       download(GROUP_FILE_NAME, exportGroups(groups));
-      setReport({ kind: "status", text: `Exported ${countOfGroups(groups.length)}.` });
+      setReport({
+        kind: "status",
+        text: joinSentences([
+          `Exported ${countOfGroups(groups.length)}.`,
+          listSentence("Could not be read, so left out of the file: ", unreadableNames),
+        ]),
+      });
     } catch (error) {
       setReport({ kind: "problem", text: `Groups could not be read: ${messageOf(error)}` });
     }
@@ -54,6 +97,10 @@ export function Options({ store, download, newId }: OptionsProps) {
     event.target.value = "";
     if (file === undefined) return;
     setReport(null);
+    if (file.size > MAX_FILE_BYTES) {
+      setReport({ kind: "problem", text: "This file is larger than 1 MB, so it was not read." });
+      return;
+    }
     try {
       setReport(await importReport(store, await file.text(), newId));
     } catch (error) {

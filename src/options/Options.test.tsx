@@ -14,16 +14,26 @@ const renderOptions = ({
   groups = [platform],
   keepOnSave = (saved: Group[]) => saved,
   saveFailure,
+  unreadableNames = [],
+  rereadFailure,
 }: {
   groups?: Group[];
   keepOnSave?: (saved: Group[]) => Group[];
   saveFailure?: Error;
+  unreadableNames?: string[];
+  rereadFailure?: Error;
 } = {}) => {
   let stored = groups;
-  const load = vi.fn<GroupStore["load"]>(() => Promise.resolve({ groups: stored, unreadable: 0 }));
+  let saved = false;
+  const load = vi.fn<GroupStore["load"]>(() =>
+    saved && rereadFailure !== undefined
+      ? Promise.reject(rereadFailure)
+      : Promise.resolve({ groups: stored, unreadable: unreadableNames.length, unreadableNames }),
+  );
   const save = vi.fn<GroupStore["save"]>((next) => {
     if (saveFailure !== undefined) return Promise.reject(saveFailure);
     stored = keepOnSave(next);
+    saved = true;
     return Promise.resolve();
   });
   const download = vi.fn<(fileName: string, text: string) => void>();
@@ -75,7 +85,48 @@ describe("Options", () => {
       groups: [docsSite, { name: "Ops", members: ["linus-qa"] }],
     });
 
-    expect((await screen.findByRole("status")).textContent).toBe("Imported 1 group.");
+    expect((await screen.findByRole("status")).textContent).toBe("Imported 1 group. Did not store 1 group.");
+  });
+
+  it("names the groups it could not read and left out of an export", async () => {
+    renderOptions({ unreadableNames: ["Broken", "group 3"] });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export groups" }));
+
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "Exported 1 group. Could not be read, so left out of the file: Broken, group 3.",
+    );
+  });
+
+  it("names the groups it could not read when reporting an import", async () => {
+    renderOptions({ unreadableNames: ["Broken"] });
+
+    await importFile({ version: 1, groups: [docsSite] });
+
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "Imported 1 group. Could not be read, so not checked for duplicates: Broken.",
+    );
+  });
+
+  it("does not call an import failed when only reading the groups back failed", async () => {
+    renderOptions({ rereadFailure: new Error("Chrome sync is unavailable.") });
+
+    await importFile({ version: 1, groups: [docsSite] });
+
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "Imported 1 group. Reading the groups back failed, so this count is unconfirmed: Chrome sync is unavailable.",
+    );
+  });
+
+  it("refuses a file over 1 MB without reading it", async () => {
+    const { save } = renderOptions();
+
+    await importFile("x".repeat(1_048_577));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "This file is larger than 1 MB, so it was not read.",
+    );
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("refuses a file from a newer version and saves nothing", async () => {

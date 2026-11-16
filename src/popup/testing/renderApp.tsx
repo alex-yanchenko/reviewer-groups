@@ -132,8 +132,13 @@ export const renderApp = ({
   if (saveFailure === undefined) save.mockResolvedValue(undefined);
   else save.mockRejectedValueOnce(saveFailure);
   const load = vi.fn<GroupStore["load"]>();
-  if (loadFailure === undefined) load.mockResolvedValueOnce({ groups, unreadable });
-  else load.mockRejectedValueOnce(loadFailure);
+  if (loadFailure === undefined) {
+    load.mockResolvedValueOnce({
+      groups,
+      unreadable,
+      unreadableNames: Array.from({ length: unreadable }, (_, index) => `group ${index + 1}`),
+    });
+  } else load.mockRejectedValueOnce(loadFailure);
   const store = { load, save } satisfies GroupStore;
   const drafts = {
     load: vi.fn<DraftStore["load"]>().mockReturnValueOnce(draftLoad),

@@ -222,7 +222,7 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
       <section className="window">
         <App
           store={{
-            load: () => Promise.resolve({ groups: scene.groups, unreadable: 0 }),
+            load: () => Promise.resolve({ groups: scene.groups, unreadable: 0, unreadableNames: [] }),
             save: () => Promise.resolve(),
           }}
           drafts={{ load: () => Promise.resolve(scene.draft), save: () => Promise.resolve() }}

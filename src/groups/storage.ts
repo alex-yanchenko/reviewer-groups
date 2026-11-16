@@ -15,6 +15,7 @@ export interface StorageArea {
 export interface StoredGroups {
   groups: Group[];
   unreadable: number;
+  unreadableNames: string[];
 }
 
 const groupOrderSchema = z.array(z.string());
@@ -28,22 +29,40 @@ const storedOrder = (stored: Record<string, unknown>): string[] | undefined => {
   return order.success ? order.data : undefined;
 };
 
-const readOrderedGroup = (stored: Record<string, unknown>, id: string): Group | undefined => {
-  const group = readStoredGroup(stored[groupKey(id)]);
-  return group === undefined ? undefined : { ...group, ...readGroupOptions(stored[optionsKey(id)]) };
+type ReadEntry = { group: Group } | { unreadableName: string };
+
+const nameOfUnreadable = (raw: unknown, fallback: string): string => {
+  const named = z.object({ name: z.string().check(z.trim(), z.minLength(1)) }).safeParse(raw);
+  return named.success ? named.data.name : fallback;
 };
 
-const readEveryGroup = (stored: Record<string, unknown>): (Group | undefined)[] => {
+const readOrderedGroup = (stored: Record<string, unknown>, id: string): ReadEntry => {
+  const raw = stored[groupKey(id)];
+  const group = readStoredGroup(raw);
+  return group === undefined
+    ? { unreadableName: nameOfUnreadable(raw, id) }
+    : { group: { ...group, ...readGroupOptions(stored[optionsKey(id)]) } };
+};
+
+const readLegacyGroup = (raw: unknown, index: number): ReadEntry => {
+  const group = readStoredGroup(raw);
+  return group === undefined ? { unreadableName: nameOfUnreadable(raw, `group ${index + 1}`) } : { group };
+};
+
+const readEveryGroup = (stored: Record<string, unknown>): ReadEntry[] => {
   const order = storedOrder(stored);
   if (order !== undefined) return order.map((id) => readOrderedGroup(stored, id));
   const legacy = legacyGroupsSchema.safeParse(stored[LEGACY_GROUPS_KEY]);
-  return legacy.success ? legacy.data.map(readStoredGroup) : [];
+  return legacy.success ? legacy.data.map(readLegacyGroup) : [];
 };
 
 export const loadGroups = async (area: StorageArea): Promise<StoredGroups> => {
   const entries = readEveryGroup(await area.get(null));
-  const groups = entries.filter((group) => group !== undefined);
-  return { groups, unreadable: entries.length - groups.length };
+  const groups = entries.flatMap((entry) => ("group" in entry ? [entry.group] : []));
+  const unreadableNames = entries.flatMap((entry) =>
+    "unreadableName" in entry ? [entry.unreadableName] : [],
+  );
+  return { groups, unreadable: unreadableNames.length, unreadableNames };
 };
 
 const unreadableStoredIds = (stored: Record<string, unknown>, saving: Set<string>): string[] =>

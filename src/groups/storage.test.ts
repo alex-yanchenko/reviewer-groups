@@ -29,7 +29,11 @@ describe("loadGroups", () => {
       [`${GROUP_KEY_PREFIX}g2`]: frontend,
     });
 
-    expect(await loadGroups(area)).toEqual({ groups: [frontend, backend], unreadable: 0 });
+    expect(await loadGroups(area)).toEqual({
+      groups: [frontend, backend],
+      unreadable: 0,
+      unreadableNames: [],
+    });
     expect(get).toHaveBeenCalledWith(null);
   });
 
@@ -40,19 +44,27 @@ describe("loadGroups", () => {
       [`${GROUP_KEY_PREFIX}broken`]: { id: "broken", name: "Broken", members: [] },
     });
 
-    expect(await loadGroups(area)).toEqual({ groups: [backend], unreadable: 2 });
+    expect(await loadGroups(area)).toEqual({
+      groups: [backend],
+      unreadable: 2,
+      unreadableNames: ["Broken", "missing"],
+    });
   });
 
   it("reads groups saved by the first version under a single key", async () => {
     const { area } = buildArea({ [LEGACY_GROUPS_KEY]: [backend, { id: "x", name: "", members: [] }] });
 
-    expect(await loadGroups(area)).toEqual({ groups: [backend], unreadable: 1 });
+    expect(await loadGroups(area)).toEqual({
+      groups: [backend],
+      unreadable: 1,
+      unreadableNames: ["group 2"],
+    });
   });
 
   it("reads an empty store as no groups", async () => {
     const { area } = buildArea({});
 
-    expect(await loadGroups(area)).toEqual({ groups: [], unreadable: 0 });
+    expect(await loadGroups(area)).toEqual({ groups: [], unreadable: 0, unreadableNames: [] });
   });
 
   it("adds each group's options from its own options key", async () => {
@@ -66,6 +78,7 @@ describe("loadGroups", () => {
     expect(await loadGroups(area)).toEqual({
       groups: [{ ...backend, repos: ["acme/widgets"], ask: 1 }, frontend],
       unreadable: 0,
+      unreadableNames: [],
     });
   });
 
@@ -76,7 +89,7 @@ describe("loadGroups", () => {
       [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: { repos: "acme/widgets", ask: 0 },
     });
 
-    expect(await loadGroups(area)).toEqual({ groups: [backend], unreadable: 0 });
+    expect(await loadGroups(area)).toEqual({ groups: [backend], unreadable: 0, unreadableNames: [] });
   });
 });
 

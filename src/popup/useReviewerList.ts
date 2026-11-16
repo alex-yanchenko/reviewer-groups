@@ -4,14 +4,21 @@ import type { ListReviewersReply, ReviewedPerson, ReviewerCandidate } from "../m
 export type Reviewers =
   | { state: "absent" }
   | { state: "loading" }
-  | { state: "ready"; candidates: ReviewerCandidate[]; reviewed: ReviewedPerson[]; problem: string }
+  | {
+      state: "ready";
+      query: string;
+      candidates: ReviewerCandidate[];
+      reviewed: ReviewedPerson[];
+      problem: string;
+    }
   | { state: "failed"; error: string };
 
 const SEARCH_DEBOUNCE_MS = 250;
 
-const reviewersAfterReply = (previous: Reviewers, reply: ListReviewersReply): Reviewers => {
-  if (reply.ok)
-    return { state: "ready", candidates: reply.candidates, reviewed: reply.reviewed, problem: "" };
+const reviewersAfterReply = (previous: Reviewers, query: string, reply: ListReviewersReply): Reviewers => {
+  if (reply.ok) {
+    return { state: "ready", query, candidates: reply.candidates, reviewed: reply.reviewed, problem: "" };
+  }
   if (previous.state === "ready") return { ...previous, problem: reply.error };
   return { state: "failed", error: reply.error };
 };
@@ -40,7 +47,7 @@ export const useReviewerList = ({
       () => {
         void listReviewers(query).then((reply) => {
           if (!stillWanted) return;
-          setReviewers((previous) => reviewersAfterReply(previous, reply));
+          setReviewers((previous) => reviewersAfterReply(previous, query, reply));
           if (reply.ok) onFound(reply.candidates);
         });
       },

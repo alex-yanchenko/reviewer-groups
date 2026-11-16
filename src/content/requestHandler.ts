@@ -1,8 +1,11 @@
 import {
+  COUNT_OPEN_REQUESTS,
+  countOpenRequestsMessageSchema,
   LIST_REVIEWERS,
   listReviewersMessageSchema,
   REQUEST_REVIEW,
   requestReviewMessageSchema,
+  type CountOpenRequestsReply,
   type ListReviewersReply,
   type RequestReviewReply,
 } from "../messages";
@@ -20,8 +23,15 @@ import {
   requestReviewFrom,
   type GitHubPage,
 } from "./githubReviewers";
+import { countOpenReviewRequests, SearchAnswerUnreadableError, SearchLimitedError } from "./openRequests";
 
-const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([REQUEST_REVIEW, LIST_REVIEWERS]);
+type ExtensionReply = RequestReviewReply | ListReviewersReply | CountOpenRequestsReply;
+
+const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([
+  REQUEST_REVIEW,
+  LIST_REVIEWERS,
+  COUNT_OPEN_REQUESTS,
+]);
 
 const EXPECTED_FAILURES = [
   ConversationPageUnreadableError,
@@ -31,6 +41,8 @@ const EXPECTED_FAILURES = [
   PullRequestPageMissingError,
   RequestInProgressError,
   ReviewerFormMissingError,
+  SearchAnswerUnreadableError,
+  SearchLimitedError,
 ];
 
 export const isExtensionMessage = (message: unknown): message is { type: string } =>
@@ -70,12 +82,34 @@ const handleRequestReview = (page: GitHubPage, message: unknown): Promise<Reques
   );
 };
 
+const handleCountOpenRequests = (page: GitHubPage, message: unknown): Promise<CountOpenRequestsReply> => {
+  const parsed = countOpenRequestsMessageSchema.safeParse(message);
+  if (!parsed.success) {
+    return Promise.resolve({
+      ok: false,
+      error: "The request did not carry a person's login.",
+      limited: false,
+    });
+  }
+  return countOpenReviewRequests(page, parsed.data.login).then(
+    (count) => ({ ok: true, count }),
+    (error: unknown) => ({
+      ...replyWithExpectedFailure(error),
+      limited: error instanceof SearchLimitedError,
+    }),
+  );
+};
+
+const HANDLERS: Record<string, (page: GitHubPage, message: unknown) => Promise<ExtensionReply>> = {
+  [REQUEST_REVIEW]: handleRequestReview,
+  [LIST_REVIEWERS]: handleListReviewers,
+  [COUNT_OPEN_REQUESTS]: handleCountOpenRequests,
+};
+
 export const handleExtensionMessage = async (
   page: GitHubPage,
   message: unknown,
-): Promise<RequestReviewReply | ListReviewersReply | undefined> => {
+): Promise<ExtensionReply | undefined> => {
   if (!isExtensionMessage(message)) return undefined;
-  return message.type === LIST_REVIEWERS
-    ? handleListReviewers(page, message)
-    : handleRequestReview(page, message);
+  return HANDLERS[message.type]?.(page, message);
 };

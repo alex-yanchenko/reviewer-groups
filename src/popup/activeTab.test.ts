@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { describePullRequest, listReviewersInTab, parseCandidatesReply, parseReply } from "./activeTab";
+import {
+  describePullRequest,
+  listReviewersInTab,
+  parseCandidatesReply,
+  parseCountReply,
+  parseReply,
+} from "./activeTab";
 
 const emptyOutcome = {
   added: [],
@@ -118,6 +124,26 @@ describe("parseCandidatesReply", () => {
     expect(parseCandidatesReply("nonsense")).toEqual({
       ok: false,
       error: "The page sent back an unexpected answer.",
+    });
+  });
+});
+
+describe("parseCountReply", () => {
+  it("accepts a count from the page", () => {
+    expect(parseCountReply({ ok: true, count: 4 })).toEqual({ ok: true, count: 4 });
+  });
+
+  it("accepts a search limit the page reported", () => {
+    const limited = { ok: false, error: "GitHub is limiting searches; counts paused.", limited: true };
+
+    expect(parseCountReply(limited)).toEqual(limited);
+  });
+
+  it("turns anything else into counts being unavailable", () => {
+    expect(parseCountReply({ ok: true, count: -1 })).toEqual({
+      ok: false,
+      error: "Counts unavailable.",
+      limited: false,
     });
   });
 });

@@ -5,6 +5,7 @@ import type { ListReviewersReply, RequestReviewReply, ReviewerCandidate, ReviewS
 import { App } from "../src/popup/App";
 import { EMPTY_DIRECTORY } from "../src/popup/directory";
 import type { Draft } from "../src/popup/draft";
+import { OpenRequestCounter } from "../src/popup/openRequestCounter";
 import "../src/popup/popup.css";
 import "./scenes.css";
 
@@ -216,6 +217,12 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
           directory={{ load: () => Promise.resolve(EMPTY_DIRECTORY), save: () => Promise.resolve() }}
           requestReview={requestReview}
           listReviewers={listReviewers}
+          openRequests={
+            new OpenRequestCounter({
+              countInTab: () => Promise.resolve({ ok: true, count: 1 }),
+              area: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
+            })
+          }
           newId={() => "demo"}
           pullRequest="northwind/storefront#482"
         />

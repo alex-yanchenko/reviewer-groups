@@ -6,7 +6,7 @@ import type {
   ReviewRequestOutcome,
   ReviewState,
 } from "./content/githubReviewers";
-import { memberSchema } from "./groups/group";
+import { isPersonLogin, memberSchema } from "./groups/group";
 
 export type { ReviewedPerson, ReviewerCandidate, ReviewerList, ReviewRequestOutcome, ReviewState };
 
@@ -32,6 +32,19 @@ export const listReviewersMessageSchema = z.object({
 });
 
 export type ListReviewersMessage = z.infer<typeof listReviewersMessageSchema>;
+
+export const COUNT_OPEN_REQUESTS = "count-open-requests";
+
+export const countOpenRequestsMessageSchema = z.object({
+  type: z.literal(COUNT_OPEN_REQUESTS),
+  session: popupSessionSchema,
+  login: memberSchema.check(z.refine(isPersonLogin)),
+});
+
+export type CountOpenRequestsMessage = z.infer<typeof countOpenRequestsMessageSchema>;
+
+export type CountOpenRequestsReply =
+  { ok: true; count: number } | { ok: false; error: string; limited: boolean };
 
 export type RequestReviewReply = { ok: true; outcome: ReviewRequestOutcome } | { ok: false; error: string };
 

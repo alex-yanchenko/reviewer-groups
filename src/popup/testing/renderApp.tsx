@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import type { Group } from "../../groups/group";
 import type {
+  CountOpenRequestsReply,
   ListReviewersReply,
   RequestReviewReply,
   ReviewerCandidate,
@@ -9,6 +10,7 @@ import type {
 } from "../../messages";
 import { App, type DirectoryStore, type Draft, type DraftStore, type GroupStore } from "../App";
 import { EMPTY_DIRECTORY, type Directory } from "../directory";
+import { OpenRequestCounter } from "../openRequestCounter";
 
 export const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): ReviewerCandidate => ({
   login,
@@ -43,6 +45,7 @@ export const emptyDraft: Draft = { selection: [], editingGroupId: null };
 export interface RenderOptions {
   groups?: Group[];
   unreadable?: number;
+  loadFailure?: Error;
   saveFailure?: Error;
   pullRequest?: string | null;
   candidates?: ListReviewersReply;
@@ -52,11 +55,30 @@ export interface RenderOptions {
   draftLoad?: Promise<Draft>;
   directory?: Directory;
   requestReview?: (members: string[]) => Promise<RequestReviewReply>;
+  openRequestCounts?: Record<string, number>;
+  countReply?: (login: string) => Promise<CountOpenRequestsReply>;
 }
+
+const countingFrom = (counts: Record<string, number>) =>
+  vi
+    .fn<(login: string) => Promise<CountOpenRequestsReply>>()
+    .mockImplementation((login) => Promise.resolve({ ok: true, count: counts[login] ?? 0 }));
+
+const memoryArea = () => {
+  let stored: Record<string, unknown> = {};
+  return {
+    get: () => Promise.resolve(stored),
+    set: (items: Record<string, unknown>) => {
+      stored = { ...stored, ...items };
+      return Promise.resolve();
+    },
+  };
+};
 
 export const renderApp = ({
   groups = [],
   unreadable = 0,
+  loadFailure,
   saveFailure,
   pullRequest = "acme/widgets#7",
   candidates = { ok: true, candidates: reviewers, reviewed: [] },
@@ -66,7 +88,13 @@ export const renderApp = ({
   draftLoad = Promise.resolve(draft),
   directory = EMPTY_DIRECTORY,
   requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
+  openRequestCounts = {},
+  countReply,
 }: RenderOptions = {}) => {
+  const countInTab = vi
+    .fn<(login: string) => Promise<CountOpenRequestsReply>>()
+    .mockImplementation(countReply ?? countingFrom(openRequestCounts));
+  const openRequests = new OpenRequestCounter({ countInTab, area: memoryArea() });
   const directoryStore = {
     load: vi.fn<DirectoryStore["load"]>().mockResolvedValueOnce(directory),
     save: vi.fn<DirectoryStore["save"]>().mockResolvedValue(undefined),
@@ -74,10 +102,10 @@ export const renderApp = ({
   const save = vi.fn<GroupStore["save"]>();
   if (saveFailure === undefined) save.mockResolvedValue(undefined);
   else save.mockRejectedValueOnce(saveFailure);
-  const store = {
-    load: vi.fn<GroupStore["load"]>().mockResolvedValueOnce({ groups, unreadable }),
-    save,
-  } satisfies GroupStore;
+  const load = vi.fn<GroupStore["load"]>();
+  if (loadFailure === undefined) load.mockResolvedValueOnce({ groups, unreadable });
+  else load.mockRejectedValueOnce(loadFailure);
+  const store = { load, save } satisfies GroupStore;
   const drafts = {
     load: vi.fn<DraftStore["load"]>().mockReturnValueOnce(draftLoad),
     save: vi.fn<DraftStore["save"]>().mockResolvedValue(undefined),
@@ -105,6 +133,7 @@ export const renderApp = ({
       directory={directoryStore}
       requestReview={countedRequest}
       listReviewers={listReviewers}
+      openRequests={openRequests}
       newId={() => "new-id"}
       pullRequest={pullRequest}
     />,
@@ -115,6 +144,8 @@ export const renderApp = ({
     saveDirectory: directoryStore.save,
     listReviewers,
     requestReview,
+    countInTab,
+    openRequests,
   };
 };
 

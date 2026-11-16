@@ -128,3 +128,50 @@ describe("handleExtensionMessage", () => {
     expect(await handleExtensionMessage(github.page, { type: "ping" })).toBeUndefined();
   });
 });
+
+describe("handleExtensionMessage counting open review requests", () => {
+  const countMessage = (login: string) => ({ type: "count-open-requests", session: "popup-1", login });
+
+  it("answers with the count GitHub's search gives", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([], { openRequestCounts: { "grace-ops": 3 } });
+
+    expect(await handleExtensionMessage(github.page, countMessage("grace-ops"))).toEqual({
+      ok: true,
+      count: 3,
+    });
+  });
+
+  it("marks the failure as a search limit when GitHub answers 429", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([], { searchStatus: 429 });
+
+    expect(await handleExtensionMessage(github.page, countMessage("grace-ops"))).toEqual({
+      ok: false,
+      error: "GitHub is limiting searches; counts paused.",
+      limited: true,
+    });
+  });
+
+  it("answers with an ordinary failure when the search answer cannot be read", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([], { searchBody: "{}" });
+
+    expect(await handleExtensionMessage(github.page, countMessage("grace-ops"))).toEqual({
+      ok: false,
+      error: "Counts unavailable.",
+      limited: false,
+    });
+  });
+
+  it("refuses to count a team, whose requests the search cannot see", async () => {
+    const github = createFakeGitHub([]);
+
+    expect(await handleExtensionMessage(github.page, countMessage("acme/backend"))).toEqual({
+      ok: false,
+      error: "The request did not carry a person's login.",
+      limited: false,
+    });
+    expect(github.fetch).not.toHaveBeenCalled();
+  });
+});

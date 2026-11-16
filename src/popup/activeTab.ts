@@ -1,8 +1,11 @@
 import * as z from "zod/mini";
 import { memberSchema } from "../groups/group";
 import {
+  COUNT_OPEN_REQUESTS,
   LIST_REVIEWERS,
   REQUEST_REVIEW,
+  type CountOpenRequestsMessage,
+  type CountOpenRequestsReply,
   type ListReviewersMessage,
   type ListReviewersReply,
   type RequestReviewMessage,
@@ -126,6 +129,27 @@ export const requestReviewInTab = (
 ): Promise<RequestReviewReply> => {
   const message: RequestReviewMessage = { type: REQUEST_REVIEW, session, members };
   return sendToPicker(id, message).then(parseReply, tabUnreachable);
+};
+
+const countReplySchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), count: z.int().check(z.nonnegative()) }),
+  z.object({ ok: z.literal(false), error: z.string(), limited: z.boolean() }),
+]);
+
+export const parseCountReply = (raw: unknown): CountOpenRequestsReply => {
+  const result = countReplySchema.safeParse(raw);
+  return result.success ? result.data : { ok: false, error: "Counts unavailable.", limited: false };
+};
+
+export const countOpenRequestsInTab = (
+  { id, session }: PopupTab,
+  login: string,
+): Promise<CountOpenRequestsReply> => {
+  const message: CountOpenRequestsMessage = { type: COUNT_OPEN_REQUESTS, session, login };
+  return sendToPicker(id, message).then(parseCountReply, (error: unknown) => ({
+    ...tabUnreachable(error),
+    limited: false,
+  }));
 };
 
 export const listReviewersInTab = ({ id, session }: PopupTab, query: string): Promise<ListReviewersReply> => {

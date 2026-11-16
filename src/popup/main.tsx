@@ -1,10 +1,11 @@
 import { createRoot } from "react-dom/client";
 import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
 import type { ListReviewersReply, RequestReviewReply } from "../messages";
-import { listReviewersInTab, readActiveTab, requestReviewInTab } from "./activeTab";
+import { countOpenRequestsInTab, listReviewersInTab, readActiveTab, requestReviewInTab } from "./activeTab";
 import { App, type DirectoryStore, type DraftStore, type GroupStore } from "./App";
 import { loadDirectory, saveDirectory } from "./directory";
 import { loadDraft, saveDraft } from "./draft";
+import { OpenRequestCounter } from "./openRequestCounter";
 import "./popup.css";
 
 const syncArea: StorageArea = chrome.storage.sync;
@@ -37,6 +38,13 @@ const mount = async () => {
     popupTab === null ? Promise.resolve(NO_TAB) : requestReviewInTab(popupTab, members);
   const listReviewers = (query: string): Promise<ListReviewersReply> =>
     popupTab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(popupTab, query);
+  const openRequests = new OpenRequestCounter({
+    countInTab: (login) =>
+      popupTab === null
+        ? Promise.resolve({ ...NO_TAB, limited: false })
+        : countOpenRequestsInTab(popupTab, login),
+    area: sessionArea,
+  });
   createRoot(container).render(
     <App
       store={store}
@@ -46,6 +54,7 @@ const mount = async () => {
       pullRequest={tab?.pullRequest ?? null}
       requestReview={requestReview}
       listReviewers={listReviewers}
+      openRequests={openRequests}
     />,
   );
 };

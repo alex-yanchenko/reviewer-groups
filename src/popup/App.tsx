@@ -21,7 +21,9 @@ import { GroupForm, type GroupDraft } from "./GroupForm";
 import { GroupList } from "./GroupList";
 import { placeForRepository } from "./groupSettings";
 import { PeoplePicker } from "./PeoplePicker";
+import type { OpenRequestCounter } from "./openRequestCounter";
 import { ReRequestOffer } from "./ReRequestOffer";
+import { useOpenRequestCounts } from "./useOpenRequestCounts";
 import { useReviewerList } from "./useReviewerList";
 import { rankSearchResults } from "./searchResults";
 import { SelectionBar } from "./SelectionBar";
@@ -49,6 +51,7 @@ export interface AppProps {
   directory: DirectoryStore;
   requestReview: (members: string[]) => Promise<RequestReviewReply>;
   listReviewers: (query: string) => Promise<ListReviewersReply>;
+  openRequests: OpenRequestCounter;
   newId: () => string;
   pullRequest: string | null;
 }
@@ -84,6 +87,7 @@ export function App({
   directory: directoryStore,
   requestReview,
   listReviewers,
+  openRequests,
   newId,
   pullRequest,
 }: AppProps) {
@@ -144,6 +148,7 @@ export function App({
     ready: directoryReady,
     onFound: rememberFound,
   });
+  const counts = useOpenRequestCounts(openRequests, reviewers);
 
   const remembered = rememberedPeople(directory);
   const picker =
@@ -314,6 +319,7 @@ export function App({
             selection={draft.selection}
             search={search}
             problem={picker.problem}
+            counts={counts}
             onSearch={setSearch}
             onToggle={(login) => updateDraft({ ...draft, selection: toggleLogin(draft.selection, login) })}
           />

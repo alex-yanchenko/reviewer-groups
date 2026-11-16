@@ -29,6 +29,9 @@ export interface FakeGitHubOptions {
   missingAccounts?: string[];
   profileStatus?: number;
   conversation?: FakeConversationPage;
+  openRequestCounts?: Record<string, number>;
+  searchStatus?: number;
+  searchBody?: string;
 }
 
 export interface FakeGitHub {
@@ -208,6 +211,15 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
     return new Response(buildConversationPage(conversation), { headers: { "content-type": "text/html" } });
   };
 
+  const answerPullRequestSearch = (url: URL) => {
+    if (options.searchStatus !== undefined) return new Response("", { status: options.searchStatus });
+    if (options.searchBody !== undefined) return new Response(options.searchBody);
+    const login = /review-requested:(\S+)/.exec(url.searchParams.get("q") ?? "")?.[1] ?? "";
+    return Response.json({
+      payload: { blackbirdSearchRoute: { result_count: options.openRequestCounts?.[login] ?? 0 } },
+    });
+  };
+
   const fakeFetch = vi.fn<typeof fetch>((input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (init?.method === "POST") {
@@ -216,6 +228,7 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
     }
     if (init?.method === "HEAD") return Promise.resolve(answerProfile(url));
     if (url.pathname === PULL_REQUEST_PATH) return Promise.resolve(answerConversation());
+    if (url.pathname === "/search") return Promise.resolve(answerPullRequestSearch(url));
     return Promise.resolve(answerSearch(url));
   });
 

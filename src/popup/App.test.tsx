@@ -1,9 +1,9 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Group } from "../groups/group";
 import type { RequestReviewReply } from "../messages";
-import { App, type Draft, type GroupStore } from "./App";
-import { EMPTY_DIRECTORY, type Directory } from "./directory";
+import type { Draft } from "./App";
+import type { Directory } from "./directory";
 import {
   candidate,
   emptyDraft,
@@ -551,18 +551,7 @@ describe("App away from a pull request", () => {
   });
 
   it("shows why stored groups could not be read", async () => {
-    const load = vi.fn<GroupStore["load"]>().mockRejectedValueOnce(new Error("groups[0].members: too small"));
-    render(
-      <App
-        store={{ load, save: vi.fn() }}
-        drafts={{ load: vi.fn().mockResolvedValueOnce(emptyDraft), save: vi.fn() }}
-        directory={{ load: vi.fn().mockResolvedValueOnce(EMPTY_DIRECTORY), save: vi.fn() }}
-        requestReview={vi.fn()}
-        listReviewers={vi.fn()}
-        newId={() => "new-id"}
-        pullRequest={null}
-      />,
-    );
+    renderApp({ pullRequest: null, loadFailure: new Error("groups[0].members: too small") });
 
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Saved groups could not be read: groups[0].members: too small",

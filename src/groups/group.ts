@@ -6,6 +6,8 @@ const MEMBER_PATTERN = new RegExp(`^${LOGIN_PATTERN}(?:_[a-z\\d]+|\\[bot\\]|/[a-
 
 export const memberSchema = z.string().check(z.regex(MEMBER_PATTERN));
 
+export const isPersonLogin = (login: string): boolean => !login.includes("/") && !/\[bot\]$/i.test(login);
+
 export const groupSchema = z.looseObject({
   id: z.string().check(z.minLength(1)),
   name: z.string().check(z.trim(), z.minLength(1), z.maxLength(60)),

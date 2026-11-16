@@ -29,9 +29,12 @@ export type ListReviewersReply = ({ ok: true } & ReviewerList) | { ok: false; er
 
 const popupSessionSchema = z.string().check(z.minLength(1), z.maxLength(100));
 
+const pullRequestReferenceSchema = z.string().check(z.regex(/^[^/\s#]+\/[^/\s#]+#\d+$/));
+
 export const requestReviewMessageSchema = z.object({
   type: z.literal(REQUEST_REVIEW),
   session: popupSessionSchema,
+  pullRequest: pullRequestReferenceSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
 });
 
@@ -75,7 +78,7 @@ export const REMOVE_REVIEWERS = "remove-reviewers";
 export const removeReviewersMessageSchema = z.object({
   type: z.literal(REMOVE_REVIEWERS),
   session: popupSessionSchema,
-  pullRequest: z.string().check(z.regex(/^[^/\s#]+\/[^/\s#]+#\d+$/)),
+  pullRequest: pullRequestReferenceSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
 });
 

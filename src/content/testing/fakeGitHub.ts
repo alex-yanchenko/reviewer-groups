@@ -133,16 +133,24 @@ export const mountPullRequestPage = (
   doc: Document,
   {
     tab = "",
+    path = PULL_REQUEST_PATH,
     withForm = true,
     staleReviewerIds = [] as number[],
     reviewerRows = [] as ReviewerRow[],
     author = undefined as string | undefined,
   } = {},
 ) => {
-  window.history.replaceState({}, "", `${PULL_REQUEST_PATH}${tab}`);
+  window.history.replaceState({}, "", `${path}${tab}`);
   if (author !== undefined) doc.body.append(buildPullRequestHeader(doc, author));
   if (!withForm) return;
-  doc.body.append(buildSidebar(doc, { token: "page-token", staleReviewerIds, reviewerRows }));
+  doc.body.append(
+    buildSidebar(doc, {
+      token: "page-token",
+      staleReviewerIds,
+      reviewerRows,
+      formAction: `${path}/review-requests`,
+    }),
+  );
 };
 
 const buildConversationPage = ({

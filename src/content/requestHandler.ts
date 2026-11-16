@@ -84,13 +84,18 @@ const handleListReviewers = (page: GitHubPage, message: unknown): Promise<ListRe
   );
 };
 
+const requestFromThisPullRequest = async (page: GitHubPage, pullRequest: string, members: string[]) => {
+  if (!isShowingPullRequest(page.doc, pullRequest)) throw new PullRequestChangedError();
+  return requestReviewFrom(page, members);
+};
+
 const handleRequestReview = (page: GitHubPage, message: unknown): Promise<RequestReviewReply> => {
   const parsed = requestReviewMessageSchema.safeParse(message);
   if (!parsed.success) {
     return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
   }
   page.conversation.enterSession(parsed.data.session);
-  return requestReviewFrom(page, parsed.data.members).then(
+  return requestFromThisPullRequest(page, parsed.data.pullRequest, parsed.data.members).then(
     (outcome) => ({ ok: true, outcome }),
     replyWithExpectedFailure,
   );

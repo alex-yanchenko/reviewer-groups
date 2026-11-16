@@ -171,9 +171,10 @@ export interface PopupTab {
 
 export const requestReviewInTab = (
   { id, session }: PopupTab,
+  pullRequest: string,
   members: string[],
 ): Promise<RequestReviewReply> => {
-  const message: RequestReviewMessage = { type: REQUEST_REVIEW, session, members };
+  const message: RequestReviewMessage = { type: REQUEST_REVIEW, session, pullRequest, members };
   return sendToPicker(id, message).then(parseReply, tabUnreachable);
 };
 

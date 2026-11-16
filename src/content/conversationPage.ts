@@ -52,7 +52,7 @@ export const pullRequestPath = (doc: Document): string => {
 export class PullRequestChangedError extends Error {
   override readonly name = "PullRequestChangedError";
   constructor() {
-    super("This tab now shows a different pull request, so nobody was removed.");
+    super("This tab now shows a different pull request, so nothing was changed.");
   }
 }
 
@@ -63,16 +63,19 @@ export const isShowingPullRequest = (doc: Document, pullRequest: string): boolea
   return `${owner}/${repo}#${number}`.toLowerCase() === pullRequest.toLowerCase();
 };
 
-export const pullRequestUrl = (doc: Document, suffix = ""): URL =>
-  new URL(`${pullRequestPath(doc)}${suffix}`, doc.location.origin);
+export const pullRequestUrl = (doc: Document, suffix = "", path = pullRequestPath(doc)): URL =>
+  new URL(`${path}${suffix}`, doc.location.origin);
+
+const showsPullRequestPath = (doc: Document, path: string): boolean =>
+  PULL_REQUEST_PATH.exec(doc.location.pathname)?.[0].toLowerCase() === path.toLowerCase();
 
 const landedOnLoginPage = (response: Response): boolean => {
   const url = URL.parse(response.url);
   return url !== null && LOGIN_PATHS.has(url.pathname);
 };
 
-const fetchConversation = async ({ doc, fetch }: GitHubPage): Promise<Document> => {
-  const response = await fetch(pullRequestUrl(doc).href, {
+const fetchConversation = async ({ doc, fetch }: GitHubPage, path: string): Promise<Document> => {
+  const response = await fetch(pullRequestUrl(doc, "", path).href, {
     headers: { Accept: "text/html" },
     credentials: "same-origin",
   });
@@ -81,12 +84,17 @@ const fetchConversation = async ({ doc, fetch }: GitHubPage): Promise<Document> 
   return new DOMParser().parseFromString(await response.text(), "text/html");
 };
 
-export const readConversation = async (page: GitHubPage): Promise<Document> => {
-  pullRequestPath(page.doc);
-  if (page.doc.querySelector(REVIEWER_FORM) !== null) return page.doc;
+export const readConversation = async (
+  page: GitHubPage,
+  path = pullRequestPath(page.doc),
+): Promise<Document> => {
+  if (page.doc.querySelector(REVIEWER_FORM) !== null) {
+    if (!showsPullRequestPath(page.doc, path)) throw new PullRequestChangedError();
+    return page.doc;
+  }
   const cached = page.conversation.read();
   if (cached !== null) return cached;
-  const fetched = await fetchConversation(page);
+  const fetched = await fetchConversation(page, path);
   page.conversation.keep(fetched);
   return fetched;
 };
@@ -97,20 +105,29 @@ const whyTheFormIsMissing = (doc: Document): Error => {
   return login.getAttribute("content") ? new ReviewerFormMissingError() : new NotSignedInError();
 };
 
-const postsToThisPullRequest = (page: GitHubPage, action: URL): boolean =>
+const postsToThisPullRequest = (page: GitHubPage, action: URL, path: string): boolean =>
   action.origin === page.doc.location.origin &&
-  action.pathname.toLowerCase() === pullRequestUrl(page.doc, "/review-requests").pathname.toLowerCase();
+  action.pathname.toLowerCase() === pullRequestUrl(page.doc, "/review-requests", path).pathname.toLowerCase();
 
-export const findReviewerForm = (page: GitHubPage, doc: Document): ReviewerForm => {
+export const findReviewerForm = (
+  page: GitHubPage,
+  doc: Document,
+  path = pullRequestPath(page.doc),
+): ReviewerForm => {
   const element = doc.querySelector<HTMLFormElement>(REVIEWER_FORM);
   if (element === null) throw whyTheFormIsMissing(doc);
   const action = new URL(element.getAttribute("action") ?? "", page.doc.location.origin);
-  if (!postsToThisPullRequest(page, action)) throw new ConversationPageUnreadableError();
-  return { element, action, live: doc === page.doc };
+  const live = doc === page.doc;
+  if (!postsToThisPullRequest(page, action, path)) {
+    throw live ? new PullRequestChangedError() : new ConversationPageUnreadableError();
+  }
+  return { element, action, live };
 };
 
-export const readReviewerForm = async (page: GitHubPage): Promise<ReviewerForm> =>
-  findReviewerForm(page, await readConversation(page));
+export const readReviewerForm = async (
+  page: GitHubPage,
+  path = pullRequestPath(page.doc),
+): Promise<ReviewerForm> => findReviewerForm(page, await readConversation(page, path), path);
 
 export const showFreshSidebar = (form: ReviewerForm, html: string): void => {
   if (!form.live) return;

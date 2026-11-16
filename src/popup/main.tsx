@@ -47,13 +47,15 @@ const mount = async () => {
   if (container === null) return;
   const tab = await readActiveTab();
   const popupTab = tab === null ? null : { id: tab.id, session: crypto.randomUUID() };
+  const pullRequest = tab?.pullRequest ?? null;
   const requestReview = (members: string[]): Promise<RequestReviewReply> =>
-    popupTab === null ? Promise.resolve(NO_TAB) : requestReviewInTab(popupTab, members);
+    popupTab === null || pullRequest === null
+      ? Promise.resolve(NO_TAB)
+      : requestReviewInTab(popupTab, pullRequest, members);
   const listReviewers = (query: string): Promise<ListReviewersReply> =>
     popupTab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(popupTab, query);
   const lookUpGroup = (members: string[]): Promise<LookUpGroupReply> =>
     popupTab === null ? Promise.resolve(NO_TAB) : lookUpGroupInTab(popupTab, members);
-  const pullRequest = tab?.pullRequest ?? null;
   const removeReviewers = (members: string[]): Promise<RemoveReviewersReply> =>
     popupTab === null || pullRequest === null
       ? Promise.resolve(NO_TAB)

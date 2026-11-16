@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ConversationPageUnreadableError,
   NotSignedInError,
+  PullRequestChangedError,
   PullRequestPageMissingError,
   ReviewerFormMissingError,
 } from "./conversationPage";
@@ -719,5 +720,78 @@ describe("searchReviewerCandidates", () => {
     const github = createFakeGitHub([]);
 
     await expect(searchReviewerCandidates(github.page, "")).rejects.toThrow(PullRequestPageMissingError);
+  });
+});
+
+describe("a write when the tab navigates to another pull request mid-way", () => {
+  const SECOND_PULL_REQUEST = "/acme/widgets/pull/8";
+
+  const navigateAfterCurrentReviewersRead = (
+    github: ReturnType<typeof createFakeGitHub>,
+    navigate: () => void,
+  ) => {
+    const original = github.fetch.getMockImplementation();
+    if (original === undefined) throw new Error("the fake fetch has no implementation");
+    let navigated = false;
+    github.fetch.mockImplementation(async (input, init) => {
+      const response = await original(input, init);
+      const url = addressOf(input);
+      if (!navigated && url.searchParams.get("typeAhead") === "true" && url.searchParams.get("q") === "") {
+        navigated = true;
+        navigate();
+      }
+      return response;
+    });
+  };
+
+  const addressOf = (input: Parameters<typeof fetch>[0]) =>
+    new URL(input instanceof Request ? input.url : input, window.location.origin);
+
+  const postedTo = (github: ReturnType<typeof createFakeGitHub>) =>
+    github.fetch.mock.calls.filter(([, init]) => init?.method === "POST").map(([url]) => addressOf(url).href);
+
+  it("refuses to post when the tab's live form now belongs to the second pull request", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(people());
+    navigateAfterCurrentReviewersRead(github, () => {
+      document.body.replaceChildren();
+      mountPullRequestPage(document, { path: SECOND_PULL_REQUEST });
+    });
+
+    await expect(requestReviewFrom(github.page, ["mona"])).rejects.toThrow(PullRequestChangedError);
+
+    expect(github.posts).toEqual([]);
+  });
+
+  it("refuses to remove when the tab's live form now belongs to the second pull request", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([{ id: 201, login: "ada-dev", selected: true }]);
+    navigateAfterCurrentReviewersRead(github, () => {
+      document.body.replaceChildren();
+      mountPullRequestPage(document, { path: SECOND_PULL_REQUEST });
+    });
+
+    await expect(removeReviewersFrom(github.page, ["ada-dev"])).rejects.toThrow(PullRequestChangedError);
+
+    expect(github.posts).toEqual([]);
+  });
+
+  it("keeps every address of the write on the first pull request when the second tab shows no form", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(people());
+    navigateAfterCurrentReviewersRead(github, () => {
+      document.body.replaceChildren();
+      mountPullRequestPage(document, { path: SECOND_PULL_REQUEST, tab: "/files", withForm: false });
+    });
+
+    const outcome = await requestReviewFrom(github.page, ["mona"]);
+
+    expect(outcome.added).toEqual(["mona"]);
+    expect(postedTo(github)).toEqual(["http://localhost:3000/acme/widgets/pull/7/review-requests"]);
+    const typeaheadPaths = github.fetch.mock.calls
+      .map(([url]) => addressOf(url))
+      .filter((url) => url.searchParams.has("typeAhead"))
+      .map((url) => url.pathname);
+    expect([...new Set(typeaheadPaths)]).toEqual(["/acme/widgets/pull/7/review-requests"]);
   });
 });

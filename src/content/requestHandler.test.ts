@@ -16,6 +16,7 @@ describe("handleExtensionMessage", () => {
       await handleExtensionMessage(github.page, {
         type: "request-review",
         session: "popup-1",
+        pullRequest: "acme/widgets#7",
         members: ["mona"],
       }),
     ).toEqual({
@@ -39,6 +40,7 @@ describe("handleExtensionMessage", () => {
       await handleExtensionMessage(github.page, {
         type: "request-review",
         session: "popup-1",
+        pullRequest: "acme/widgets#7",
         members: ["mona"],
       }),
     ).toEqual({ ok: false, error: "Sign in to GitHub in this tab to request reviews." });
@@ -63,9 +65,42 @@ describe("handleExtensionMessage", () => {
       await handleExtensionMessage(github.page, {
         type: "request-review",
         session: "popup-1",
+        pullRequest: "acme/widgets#7",
         members: ["mona"],
       }),
     ).toEqual({ ok: false, error: "GitHub answered 422." });
+  });
+
+  it("refuses a request-review message when the tab shows another pull request than the one it was sent for", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([{ id: 101, login: "mona" }]);
+
+    expect(
+      await handleExtensionMessage(github.page, {
+        type: "request-review",
+        session: "popup-1",
+        pullRequest: "acme/widgets#8",
+        members: ["mona"],
+      }),
+    ).toEqual({
+      ok: false,
+      error: "This tab now shows a different pull request, so nothing was changed.",
+    });
+    expect(github.posts).toEqual([]);
+  });
+
+  it("refuses a request-review message that names no pull request", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([{ id: 101, login: "mona" }]);
+
+    expect(
+      await handleExtensionMessage(github.page, {
+        type: "request-review",
+        session: "popup-1",
+        members: ["mona"],
+      }),
+    ).toEqual({ ok: false, error: "The request did not carry a valid member list." });
+    expect(github.posts).toEqual([]);
   });
 
   it("refuses a request-review message whose members are not GitHub logins", async () => {
@@ -198,7 +233,7 @@ describe("handleExtensionMessage removing reviewers", () => {
 
     expect(await handleExtensionMessage(github.page, removeMessage("acme/widgets#8"))).toEqual({
       ok: false,
-      error: "This tab now shows a different pull request, so nobody was removed.",
+      error: "This tab now shows a different pull request, so nothing was changed.",
     });
     expect(github.posts).toEqual([]);
   });

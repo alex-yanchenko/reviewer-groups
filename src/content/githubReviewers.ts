@@ -1,5 +1,6 @@
 import * as z from "zod/mini";
 import {
+  pullRequestPath,
   pullRequestUrl,
   readAuthor,
   readConversation,
@@ -82,8 +83,12 @@ const readEntries = (answer: unknown): ReviewerEntry[] => {
   return entries;
 };
 
-const searchReviewers = async ({ doc, fetch }: GitHubPage, query: string): Promise<ReviewerEntry[]> => {
-  const url = pullRequestUrl(doc, "/review-requests");
+const searchReviewers = async (
+  { doc, fetch }: GitHubPage,
+  query: string,
+  path = pullRequestPath(doc),
+): Promise<ReviewerEntry[]> => {
+  const url = pullRequestUrl(doc, "/review-requests", path);
   url.searchParams.set("typeAhead", "true");
   url.searchParams.set("q", query);
   const response = await fetch(url.href, {
@@ -139,9 +144,9 @@ export const listReviewers = async (page: GitHubPage, query: string): Promise<Re
   return { candidates, reviewed };
 };
 
-const lookUpMember = async (page: GitHubPage, member: string) => ({
+const lookUpMember = async (page: GitHubPage, member: string, path = pullRequestPath(page.doc)) => ({
   member,
-  entry: (await searchReviewers(page, member)).find((entry) => sameLogin(entry.login, member)),
+  entry: (await searchReviewers(page, member, path)).find((entry) => sameLogin(entry.login, member)),
 });
 
 export interface MemberLookup {
@@ -178,8 +183,8 @@ const reviewerFormBody = (form: HTMLFormElement, reviewers: ReviewerEntry[]): UR
   return body;
 };
 
-const sendReviewers = async (page: GitHubPage, reviewers: ReviewerEntry[]) => {
-  const form = await readReviewerForm(page);
+const sendReviewers = async (page: GitHubPage, reviewers: ReviewerEntry[], path: string) => {
+  const form = await readReviewerForm(page, path);
   const response = await page.fetch(form.action.href, {
     method: "POST",
     body: reviewerFormBody(form.element, reviewers),
@@ -191,8 +196,8 @@ const sendReviewers = async (page: GitHubPage, reviewers: ReviewerEntry[]) => {
   showFreshSidebar(form, await response.text());
 };
 
-const currentlyRequested = async (page: GitHubPage) =>
-  (await searchReviewers(page, "")).filter((entry) => entry.selected);
+const currentlyRequested = async (page: GitHubPage, path: string) =>
+  (await searchReviewers(page, "", path)).filter((entry) => entry.selected);
 
 const profilePath = (login: string) => {
   const [owner, team] = login.split("/");
@@ -218,7 +223,8 @@ const sortOutGoneAccounts = async (page: GitHubPage, outcome: ReviewRequestOutco
 };
 
 const requestLookedUpMembers = async (page: GitHubPage, members: readonly string[]) => {
-  await readReviewerForm(page);
+  const path = pullRequestPath(page.doc);
+  await readReviewerForm(page, path);
   const outcome: ReviewRequestOutcome = {
     added: [],
     alreadyRequested: [],
@@ -228,7 +234,9 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
     gone: [],
   };
   const toAdd: { member: string; entry: ReviewerEntry }[] = [];
-  for (const { member, entry } of await Promise.all(members.map((member) => lookUpMember(page, member)))) {
+  for (const { member, entry } of await Promise.all(
+    members.map((member) => lookUpMember(page, member, path)),
+  )) {
     if (entry === undefined) outcome.notFound.push(member);
     else if (entry.selected) outcome.alreadyRequested.push(member);
     else if (entry.disabled ?? false) outcome.unavailable.push(member);
@@ -236,8 +244,12 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
   }
   await sortOutGoneAccounts(page, outcome);
   if (toAdd.length === 0) return outcome;
-  await sendReviewers(page, [...(await currentlyRequested(page)), ...toAdd.map(({ entry }) => entry)]);
-  const confirmed = await currentlyRequested(page);
+  await sendReviewers(
+    page,
+    [...(await currentlyRequested(page, path)), ...toAdd.map(({ entry }) => entry)],
+    path,
+  );
+  const confirmed = await currentlyRequested(page, path);
   for (const { member } of toAdd) {
     const isRequested = confirmed.some((entry) => sameLogin(entry.login, member));
     (isRequested ? outcome.added : outcome.unconfirmed).push(member);
@@ -269,8 +281,9 @@ export interface RemovalOutcome {
 }
 
 const removeRequestedMembers = async (page: GitHubPage, members: readonly string[]) => {
-  await readReviewerForm(page);
-  const current = await currentlyRequested(page);
+  const path = pullRequestPath(page.doc);
+  await readReviewerForm(page, path);
+  const current = await currentlyRequested(page, path);
   const isRequested = (requested: ReviewerEntry[], member: string) =>
     requested.some((entry) => sameLogin(entry.login, member));
   const outcome: RemovalOutcome = {
@@ -283,8 +296,9 @@ const removeRequestedMembers = async (page: GitHubPage, members: readonly string
   await sendReviewers(
     page,
     current.filter((entry) => !members.some((member) => sameLogin(member, entry.login))),
+    path,
   );
-  const confirmed = await currentlyRequested(page);
+  const confirmed = await currentlyRequested(page, path);
   for (const member of toRemove) {
     (isRequested(confirmed, member) ? outcome.unconfirmed : outcome.removed).push(member);
   }

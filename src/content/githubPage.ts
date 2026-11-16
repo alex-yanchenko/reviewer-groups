@@ -1,23 +1,23 @@
 export class ConversationCache {
   private session: string | null = null;
-  private doc: Document | null = null;
+  private kept: { path: string; doc: Document } | null = null;
 
   enterSession(session: string): void {
     if (session === this.session) return;
     this.session = session;
-    this.doc = null;
+    this.kept = null;
   }
 
-  read(): Document | null {
-    return this.doc;
+  read(path: string): Document | null {
+    return this.kept?.path.toLowerCase() === path.toLowerCase() ? this.kept.doc : null;
   }
 
-  keep(doc: Document): void {
-    this.doc = doc;
+  keep(path: string, doc: Document): void {
+    this.kept = { path, doc };
   }
 
   forget(): void {
-    this.doc = null;
+    this.kept = null;
   }
 }
 

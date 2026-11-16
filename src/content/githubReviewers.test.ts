@@ -868,6 +868,78 @@ describe("a write when the tab navigates to another pull request mid-way", () =>
   });
 });
 
+describe("a read when the tab navigates to another pull request mid-way", () => {
+  const addressOf = (input: Parameters<typeof fetch>[0]) =>
+    new URL(input instanceof Request ? input.url : input, window.location.origin);
+
+  const navigateAfterFirstTypeahead = (github: ReturnType<typeof createFakeGitHub>) => {
+    const original = github.fetch.getMockImplementation();
+    if (original === undefined) throw new Error("the fake fetch has no implementation");
+    let navigated = false;
+    github.fetch.mockImplementation(async (input, init) => {
+      const response = await original(input, init);
+      if (!navigated && addressOf(input).searchParams.has("typeAhead")) {
+        navigated = true;
+        window.history.replaceState({}, "", "/acme/widgets/pull/8/files");
+      }
+      return response;
+    });
+  };
+
+  const pathsFetched = (github: ReturnType<typeof createFakeGitHub>) => {
+    const urls = github.fetch.mock.calls.map(([input]) => addressOf(input));
+    return {
+      conversation: urls.filter((url) => /\/pull\/\d+$/.test(url.pathname)).map((url) => url.pathname),
+      typeahead: [
+        ...new Set(urls.filter((url) => url.searchParams.has("typeAhead")).map((url) => url.pathname)),
+      ],
+    };
+  };
+
+  const team = (): FakePerson[] => [
+    { id: 201, login: "ada-dev" },
+    { id: 202, login: "grace-ops", selected: true },
+  ];
+
+  it("lists reviewers from the first pull request only", async () => {
+    mountPullRequestPage(document, { tab: "/files", withForm: false });
+    const github = createFakeGitHub(team());
+    navigateAfterFirstTypeahead(github);
+
+    await listReviewers(github.page, "");
+
+    expect(pathsFetched(github)).toEqual({
+      conversation: ["/acme/widgets/pull/7"],
+      typeahead: ["/acme/widgets/pull/7/review-requests"],
+    });
+  });
+
+  it("looks a group up on the first pull request only", async () => {
+    mountPullRequestPage(document, { tab: "/files", withForm: false });
+    const github = createFakeGitHub(team());
+    navigateAfterFirstTypeahead(github);
+
+    await lookUpGroup(github.page, ["ada-dev", "grace-ops"]);
+
+    expect(pathsFetched(github)).toEqual({
+      conversation: ["/acme/widgets/pull/7"],
+      typeahead: ["/acme/widgets/pull/7/review-requests"],
+    });
+  });
+
+  it("never returns the cached Conversation page of another pull request", async () => {
+    mountPullRequestPage(document, { tab: "/files", withForm: false });
+    const github = createFakeGitHub(team());
+    github.page.conversation.enterSession("popup-1");
+    await searchReviewerCandidates(github.page, "");
+
+    window.history.replaceState({}, "", "/acme/widgets/pull/8/files");
+    await searchReviewerCandidates(github.page, "");
+
+    expect(pathsFetched(github).conversation).toEqual(["/acme/widgets/pull/7", "/acme/widgets/pull/8"]);
+  });
+});
+
 describe("a write never drops someone already requested", () => {
   it("keeps a requested team whose entry carries a null description in the post", async () => {
     mountPullRequestPage(document);

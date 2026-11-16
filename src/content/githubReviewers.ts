@@ -152,9 +152,10 @@ const describeEntry = (
 export const searchReviewerCandidates = async (
   page: GitHubPage,
   query: string,
+  path = pullRequestPath(page.doc),
 ): Promise<ReviewerCandidate[]> => {
-  const entries = await searchReviewers(page, query);
-  const reviewStates = readReviewStates(await readConversation(page));
+  const entries = await searchReviewers(page, query, path);
+  const reviewStates = readReviewStates(await readConversation(page, path));
   return entries.map((entry) => describeEntry(entry, reviewStates));
 };
 
@@ -171,12 +172,12 @@ export interface ReviewerList {
 
 export const listReviewers = async (page: GitHubPage, query: string): Promise<ReviewerList> => {
   const path = pullRequestPath(page.doc);
-  const candidates = await searchReviewerCandidates(page, query);
+  const candidates = await searchReviewerCandidates(page, query, path);
   const requestedLogins =
     query === ""
       ? candidates.filter(({ requested }) => requested).map(({ login }) => login)
       : (await searchReviewers(page, "", path)).filter(({ selected }) => selected).map(({ login }) => login);
-  const reviewed = readReviewsLeft(await readConversation(page)).map((review) => ({
+  const reviewed = readReviewsLeft(await readConversation(page, path)).map((review) => ({
     ...review,
     requested: requestedLogins.some((login) => sameLogin(login, review.login)),
   }));
@@ -199,8 +200,9 @@ export interface GroupLookup {
 }
 
 export const lookUpGroup = async (page: GitHubPage, members: readonly string[]): Promise<GroupLookup> => {
-  const found = await Promise.all(members.map((member) => lookUpMember(page, member)));
-  const conversation = await readConversation(page);
+  const path = pullRequestPath(page.doc);
+  const found = await Promise.all(members.map((member) => lookUpMember(page, member, path)));
+  const conversation = await readConversation(page, path);
   const reviewStates = readReviewStates(conversation);
   return {
     members: found.map(({ member, entry }) => ({

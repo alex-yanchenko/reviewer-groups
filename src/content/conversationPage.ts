@@ -78,7 +78,7 @@ export const landedOnLoginPage = (response: Response): boolean => {
 export const showsSignInForm = (html: string): boolean =>
   new DOMParser().parseFromString(html, "text/html").querySelector(SIGN_IN_FORM) !== null;
 
-const fetchConversation =async ({ doc, fetch }: GitHubPage, path: string): Promise<Document> => {
+const fetchConversation = async ({ doc, fetch }: GitHubPage, path: string): Promise<Document> => {
   const response = await fetch(pullRequestUrl(doc, "", path).href, {
     headers: { Accept: "text/html" },
     credentials: "same-origin",
@@ -96,10 +96,10 @@ export const readConversation = async (
     if (!showsPullRequestPath(page.doc, path)) throw new PullRequestChangedError();
     return page.doc;
   }
-  const cached = page.conversation.read();
+  const cached = page.conversation.read(path);
   if (cached !== null) return cached;
   const fetched = await fetchConversation(page, path);
-  page.conversation.keep(fetched);
+  page.conversation.keep(path, fetched);
   return fetched;
 };
 

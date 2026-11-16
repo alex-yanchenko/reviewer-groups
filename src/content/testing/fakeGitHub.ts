@@ -267,7 +267,7 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
       return Promise.resolve(answerPost(body));
     }
     if (init?.method === "HEAD") return Promise.resolve(answerProfile(url));
-    if (url.pathname === PULL_REQUEST_PATH) return Promise.resolve(answerConversation());
+    if (/^\/acme\/widgets\/pull\/\d+$/.test(url.pathname)) return Promise.resolve(answerConversation());
     if (url.pathname === "/search") return Promise.resolve(answerPullRequestSearch(url));
     return Promise.resolve(answerSearch(url));
   });

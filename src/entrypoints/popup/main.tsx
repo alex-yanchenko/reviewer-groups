@@ -1,11 +1,11 @@
 import { createRoot } from "react-dom/client";
-import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
+import { loadGroups, saveGroups, type StorageArea } from "../../groups/storage";
 import type {
   ListReviewersReply,
   LookUpGroupReply,
   RemoveReviewersReply,
   RequestReviewReply,
-} from "../messages";
+} from "../../messages";
 import {
   countOpenRequestsInTab,
   listReviewersInTab,
@@ -13,13 +13,13 @@ import {
   readActiveTab,
   removeReviewersInTab,
   requestReviewInTab,
-} from "./activeTab";
-import { App, type DirectoryStore, type DraftStore, type GroupStore } from "./App";
-import { loadDirectory, saveDirectory } from "./directory";
-import { loadDraft, saveDraft } from "./draft";
-import { OpenRequestCounter } from "./openRequestCounter";
-import { rotationStore } from "./rotation";
-import "./popup.css";
+} from "../../popup/activeTab";
+import { App, type DirectoryStore, type DraftStore, type GroupStore } from "../../popup/App";
+import { loadDirectory, saveDirectory } from "../../popup/directory";
+import { loadDraft, saveDraft } from "../../popup/draft";
+import { OpenRequestCounter } from "../../popup/openRequestCounter";
+import { rotationStore } from "../../popup/rotation";
+import "../../popup/popup.css";
 
 const syncArea: StorageArea = chrome.storage.sync;
 const sessionArea: StorageArea = chrome.storage.session;

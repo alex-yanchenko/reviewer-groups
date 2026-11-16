@@ -194,7 +194,7 @@ const renderPromo = (root: HTMLElement) => {
   document.body.classList.add("promo");
   createRoot(root).render(
     <div className="promo-tile">
-      <img src="../icons/icon-128.png" alt="" width={96} height={96} />
+      <img src="../public/icons/icon-128.png" alt="" width={96} height={96} />
       <div>
         <h1>Reviewer Groups</h1>
         <p>Request GitHub reviews from a whole group in two clicks.</p>
@@ -215,7 +215,7 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
   createRoot(root).render(
     <div className="stage">
       <section className="pitch">
-        <img src="../icons/icon-128.png" alt="" width={72} height={72} />
+        <img src="../public/icons/icon-128.png" alt="" width={72} height={72} />
         <h1>{scene.title}</h1>
         <p>{scene.caption}</p>
         {layout === "social" && <p className="repo">github.com/alex-yanchenko/reviewer-groups</p>}

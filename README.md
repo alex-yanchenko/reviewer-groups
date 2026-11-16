@@ -35,14 +35,18 @@ The extension uses the github.com pages and endpoints that GitHub's own Reviewer
 
 ```bash
 pnpm install
-pnpm build          # writes the loadable extension to dist/
-pnpm dev            # rebuilds on change
+pnpm build          # writes the loadable extension to .output/chrome-mv3/
+pnpm dev            # development build in .output/chrome-mv3-dev/, rebuilt and reloaded on change
 pnpm check          # prettier, eslint, tsc, vitest
-pnpm package        # dist/ zipped for the Chrome Web Store
+pnpm package        # .output/reviewer-groups-<version>.zip for the Chrome Web Store
 pnpm screenshots    # regenerates docs/screenshots with invented people (needs Google Chrome)
 ```
 
-Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick the `dist/` folder.
+[WXT](https://wxt.dev) builds the extension. `wxt.config.ts` holds the manifest; the version comes from `package.json`. The pages and the page script are in `src/entrypoints/`: `popup/` and `options/` are the two extension pages, and `picker.ts` is an unlisted script, listed nowhere in the manifest, which the popup injects into the active tab with `chrome.scripting.executeScript`. Icons are in `public/icons/`.
+
+Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick the `.output/chrome-mv3/` folder.
+
+In development mode WXT adds the `tabs` permission, access to its dev server on `localhost` and a background script that reloads the extension on change. None of these are in the production build.
 
 ## Release
 

@@ -2,7 +2,7 @@
 
 A Chrome extension for requesting GitHub pull request reviews from several people at once. Open it on any tab of a pull request, tick people, and request them. Save a set you use often as a group, and next time it is two clicks: the toolbar icon, then the group.
 
-A group can be linked to repositories, so it is listed first on their pull requests, and it can ask only some of its members, picking those with the fewest open review requests. After a new push, one click re-requests everyone who already reviewed. Groups export to a file and import from one.
+A group can be linked to repositories, so it is listed first on their pull requests, and it can ask only some of its members, picking those with the fewest open review requests. After a new push, one click re-requests people who already reviewed, and the extension reports anyone GitHub did not confirm. Open request counts are shown for up to ten people on the pull request and for the members of the group being asked. Groups export to a file and import from one.
 
 No token, no setup: it works with the GitHub session you are already signed in with.
 

@@ -16,11 +16,11 @@ Text and answers for the Chrome Web Store developer dashboard, kept here so ever
 
 Request reviews on a GitHub pull request from several people at once.
 
-Open Reviewer Groups on any tab of a pull request and it lists everyone GitHub lets you request there, with avatars, teams, who is already requested, who already reviewed, and how many open review requests each person has. Tick the people you want and request them in one click. Search finds anyone who can review, not only GitHub's suggestions.
+Open Reviewer Groups on any tab of a pull request and it lists everyone GitHub lets you request there, with avatars, teams, who is already requested, who already reviewed, and how many open review requests each of up to ten people on the pull request has, and each member of a group being asked. Tick the people you want and request them in one click. Search finds anyone who can review, not only GitHub's suggestions.
 
 Save a set of people you ask often as a group. Next time it is two clicks: the toolbar icon, then the group.
 
-- Re-request everyone who already reviewed in one click after a new push.
+- Re-request people who already reviewed in one click after a new push. The extension reports anyone GitHub did not confirm.
 - Link a group to repositories, and it is listed first on their pull requests.
 - Have a group ask only some of its members, picking those with the fewest open review requests.
 - Remove the people you just requested if you picked the wrong group.

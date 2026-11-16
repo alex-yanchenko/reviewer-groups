@@ -487,7 +487,7 @@ describe("removeReviewersFrom", () => {
     expect(outcome).toEqual({ removed: [], notRequested: [], unconfirmed: ["ada-dev"] });
   });
 
-  it("waits its turn behind a request running in the same tab", async () => {
+  it("refuses a removal while a request is still running in the same tab", async () => {
     mountPullRequestPage(document);
     const github = createFakeGitHub(team());
 

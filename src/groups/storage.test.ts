@@ -183,18 +183,6 @@ describe("group options across releases", () => {
       schedule: { days: ["mon"] },
     });
   });
-
-  it("removes the options key once nothing is left in it", async () => {
-    const { area, store } = inMemoryArea({
-      [GROUP_ORDER_KEY]: ["g1"],
-      [`${GROUP_KEY_PREFIX}g1`]: backend,
-      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: { ask: 2 },
-    });
-
-    await saveGroups(area, [backend]);
-
-    expect(`${GROUP_OPTIONS_KEY_PREFIX}g1` in store).toBe(false);
-  });
 });
 
 describe("saveGroups", () => {

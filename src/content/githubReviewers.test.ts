@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ConversationPageUnreadableError,
+  findReviewerForm,
   NotSignedInError,
   PullRequestChangedError,
   PullRequestPageMissingError,
@@ -868,6 +869,40 @@ describe("a write when the tab navigates to another pull request mid-way", () =>
   });
 });
 
+describe("findReviewerForm", () => {
+  const pinnedPath = "/acme/widgets/pull/7";
+
+  const pointLiveFormAt = (path: string) =>
+    document.querySelector("form")?.setAttribute("action", `${path}/review-requests`);
+
+  it("refuses a live form whose address belongs to another pull request, though the location is the pinned one", () => {
+    mountPullRequestPage(document);
+    pointLiveFormAt("/acme/widgets/pull/8");
+    const github = createFakeGitHub([]);
+
+    expect(() => findReviewerForm(github.page, document, pinnedPath)).toThrow(PullRequestChangedError);
+  });
+
+  it("posts nothing when the live form belongs to another pull request", async () => {
+    mountPullRequestPage(document);
+    pointLiveFormAt("/acme/widgets/pull/8");
+    const github = createFakeGitHub(people());
+
+    await expect(requestReviewFrom(github.page, ["mona"])).rejects.toThrow(PullRequestChangedError);
+
+    expect(github.posts).toEqual([]);
+  });
+
+  it("accepts a live form that posts to the pinned pull request", () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([]);
+
+    expect(findReviewerForm(github.page, document, pinnedPath).action.pathname).toBe(
+      `${pinnedPath}/review-requests`,
+    );
+  });
+});
+
 describe("a read when the tab navigates to another pull request mid-way", () => {
   const addressOf = (input: Parameters<typeof fetch>[0]) =>
     new URL(input instanceof Request ? input.url : input, window.location.origin);
@@ -965,6 +1000,34 @@ describe("a write never drops someone already requested", () => {
     await removeReviewersFrom(github.page, ["ada-dev"]);
 
     expect(github.requestedLogins()).toEqual(["acme/web"]);
+  });
+
+  it.each([
+    ["a null disabled flag", { disabled: null }],
+    ["a null avatar", { avatar: null }],
+  ])("keeps a requested person with %s in the post", async (_name, nulled) => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([], {
+      searchAnswer: {
+        users: [
+          { id: 201, type: "user", login: "ada-dev", selected: true, ...nulled },
+          { id: 101, type: "user", login: "mona", selected: false },
+        ],
+      },
+    });
+
+    const outcome = await requestReviewFrom(github.page, ["mona"]);
+
+    expect(github.posts[0]?.getAll("reviewer_user_ids[]")).toEqual(["201", "101"]);
+    expect(outcome).toEqual({
+      added: [],
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: [],
+      unconfirmed: ["mona"],
+      dropped: [],
+      gone: [],
+    });
   });
 
   it("refuses to post when a requested entry cannot be read", async () => {

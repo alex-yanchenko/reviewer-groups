@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
-import type { Group } from "../groups/group";
+import type { Group, GroupOptions } from "../groups/group";
 import type { Draft } from "./draft";
+import { readGroupSettings, settingsTextOf } from "./groupSettings";
+import { GroupSettingsFields } from "./GroupSettingsFields";
 
 export function SelectionBar({
   draft,
@@ -18,12 +20,13 @@ export function SelectionBar({
   locked: boolean;
   onRequest: () => void;
   onSaveAsGroup: (name: string) => string;
-  onSaveChanges: () => string;
+  onSaveChanges: (options: GroupOptions) => string;
   onCancelEdit: () => void;
 }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [problem, setProblem] = useState("");
+  const [settings, setSettings] = useState(settingsTextOf(editingGroup));
   const count = draft.selection.length;
 
   const submitName = (event: FormEvent) => {
@@ -42,16 +45,22 @@ export function SelectionBar({
     </p>
   );
 
+  const saveChanges = () => {
+    const options = readGroupSettings(settings);
+    setProblem(typeof options === "string" ? options : onSaveChanges(options));
+  };
+
   if (editingGroup !== undefined) {
     return (
       <div className="selection-bar">
         <span className="selection-count">Editing {editingGroup.name}</span>
+        <GroupSettingsFields settings={settings} onChange={setSettings} />
         {problemLine}
         <div className="actions">
           <button type="button" className="btn" onClick={onCancelEdit}>
             Cancel
           </button>
-          <button type="button" className="btn btn-primary" onClick={() => setProblem(onSaveChanges())}>
+          <button type="button" className="btn btn-primary" onClick={saveChanges}>
             Save changes
           </button>
         </div>

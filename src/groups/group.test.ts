@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { memberSchema, readStoredGroup } from "./group";
+import { memberSchema, readGroupOptions, readStoredGroup } from "./group";
 
 describe("readStoredGroup", () => {
   it("returns a well-formed group unchanged", () => {
@@ -24,6 +24,18 @@ describe("readStoredGroup", () => {
 
   it("gives nothing back for a value that is not a group", () => {
     expect(readStoredGroup("Backend")).toBeUndefined();
+  });
+});
+
+describe("readGroupOptions", () => {
+  it("drops repository patterns that are not owner/repo or owner/*, keeping the rest", () => {
+    expect(
+      readGroupOptions({ repos: ["acme/widgets", "*/widgets", "acme", "acme/*", "acme/a/b", 7] }),
+    ).toEqual({ repos: ["acme/widgets", "acme/*"] });
+  });
+
+  it("leaves repositories out when none of the patterns is valid", () => {
+    expect(readGroupOptions({ repos: ["*/*"] })).toEqual({});
   });
 });
 

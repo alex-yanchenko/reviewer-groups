@@ -104,6 +104,12 @@ body {
   font-weight: 600;
 }
 
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .card-members {
   color: var(--muted);
   font-size: 12px;

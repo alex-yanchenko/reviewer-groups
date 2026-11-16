@@ -52,6 +52,7 @@ function MissingMembersNotice({
 
 export function GroupCard({
   group,
+  linked,
   goneMembers,
   canRequest,
   busy,
@@ -63,6 +64,7 @@ export function GroupCard({
   onRemoveMissing,
 }: {
   group: Group;
+  linked: boolean;
   goneMembers: string[];
   canRequest: boolean;
   busy: boolean;
@@ -76,7 +78,10 @@ export function GroupCard({
   return (
     <li className={editing ? "card card-editing" : "card"} aria-label={group.name}>
       <div className="card-text">
-        <strong className="card-name">{group.name}</strong>
+        <span className="card-title">
+          <strong className="card-name">{group.name}</strong>
+          {linked && <span className="badge badge-done">This repository</span>}
+        </span>
         <MemberList members={group.members} goneMembers={goneMembers} />
         <MissingMembersNotice group={group} goneMembers={goneMembers} onRemoveMissing={onRemoveMissing} />
       </div>

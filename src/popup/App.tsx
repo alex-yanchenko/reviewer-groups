@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Group } from "../groups/group";
+import { withOptions, type Group, type GroupOptions } from "../groups/group";
+import { repositoryOf } from "../groups/repoPatterns";
 import type { StoredGroups } from "../groups/storage";
 import {
   describeReply,
@@ -7,8 +8,6 @@ import {
   type RequestReviewReply,
   type ReviewerCandidate,
 } from "../messages";
-import { ReRequestOffer } from "./ReRequestOffer";
-import { useReviewerList } from "./useReviewerList";
 import {
   EMPTY_DIRECTORY,
   isGone,
@@ -18,9 +17,12 @@ import {
   type Directory,
 } from "./directory";
 import { EMPTY_DRAFT, type Draft } from "./draft";
-import { GroupCard } from "./GroupCard";
 import { GroupForm, type GroupDraft } from "./GroupForm";
+import { GroupList } from "./GroupList";
+import { placeForRepository } from "./groupSettings";
 import { PeoplePicker } from "./PeoplePicker";
+import { ReRequestOffer } from "./ReRequestOffer";
+import { useReviewerList } from "./useReviewerList";
 import { rankSearchResults } from "./searchResults";
 import { SelectionBar } from "./SelectionBar";
 
@@ -203,9 +205,11 @@ export function App({
   const replaceGroup = (changed: Group) =>
     persist((groups ?? []).map((group) => (group.id === changed.id ? changed : group)));
 
-  const saveChanges = (): string => {
+  const saveChanges = (options: GroupOptions): string => {
     if (draft.selection.length === 0) return "Tick at least one person.";
-    if (editingGroup !== undefined) replaceGroup({ ...editingGroup, members: draft.selection });
+    if (editingGroup !== undefined) {
+      replaceGroup(withOptions({ ...editingGroup, members: draft.selection }, options));
+    }
     updateDraft(EMPTY_DRAFT);
     return "";
   };
@@ -223,9 +227,10 @@ export function App({
   const removeMissingMembers = (group: Group) =>
     replaceGroup({ ...group, members: group.members.filter((member) => !isGone(directory, member)) });
 
-  const saveTypedGroup = (typed: GroupDraft) => {
-    if (typedEditor.kind === "edit") replaceGroup({ ...typedEditor.group, ...typed });
-    else persist([...(groups ?? []), { id: newId(), ...typed }]);
+  const saveTypedGroup = ({ name, members, options }: GroupDraft) => {
+    if (typedEditor.kind === "edit")
+      replaceGroup(withOptions({ ...typedEditor.group, name, members }, options));
+    else persist([...(groups ?? []), { id: newId(), name, members, ...options }]);
     setTypedEditor({ kind: "closed" });
   };
 
@@ -257,33 +262,22 @@ export function App({
       )}
 
       {groups !== null && groups.length > 0 && (
-        <ul className="cards" aria-label="Groups">
-          {groups.map((group) =>
-            typedEditor.kind === "edit" && typedEditor.group.id === group.id ? (
-              <li key={group.id} className="card card-editing">
-                <GroupForm
-                  initial={group}
-                  onSave={saveTypedGroup}
-                  onCancel={() => setTypedEditor({ kind: "closed" })}
-                />
-              </li>
-            ) : (
-              <GroupCard
-                key={group.id}
-                group={group}
-                goneMembers={group.members.filter((member) => isGone(directory, member))}
-                canRequest={pullRequest !== null}
-                busy={busy === group.id}
-                locked={busy !== null}
-                editing={editingGroup?.id === group.id}
-                onRequest={() => void requestFrom(group.id, group.members)}
-                onEdit={() => startEdit(group)}
-                onDelete={() => deleteGroup(group)}
-                onRemoveMissing={() => removeMissingMembers(group)}
-              />
-            ),
-          )}
-        </ul>
+        <GroupList
+          placed={placeForRepository(groups, repositoryOf(pullRequest))}
+          directory={directory}
+          typedEditGroupId={typedEditor.kind === "edit" ? typedEditor.group.id : null}
+          pickerEditGroupId={editingGroup?.id ?? null}
+          canRequest={pullRequest !== null}
+          busy={busy}
+          actions={{
+            onRequest: (group) => void requestFrom(group.id, group.members),
+            onEdit: startEdit,
+            onDelete: deleteGroup,
+            onRemoveMissing: removeMissingMembers,
+            onSaveTyped: saveTypedGroup,
+            onCancelTyped: () => setTypedEditor({ kind: "closed" }),
+          }}
+        />
       )}
 
       {groups !== null && groups.length === 0 && !pickerWillShow && typedEditor.kind === "closed" && (
@@ -324,7 +318,7 @@ export function App({
             onToggle={(login) => updateDraft({ ...draft, selection: toggleLogin(draft.selection, login) })}
           />
           <SelectionBar
-            key={draft.editingGroupId ?? "new"}
+            key={editingGroup?.id ?? "new"}
             draft={draft}
             editingGroup={editingGroup}
             busy={busy === SELECTION_BUSY}

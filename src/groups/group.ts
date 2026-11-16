@@ -1,4 +1,5 @@
 import * as z from "zod/mini";
+import { repoPatternSchema } from "./repoPatterns";
 
 const LOGIN_PATTERN = "[a-z\\d][a-z\\d-]{0,38}";
 const MEMBER_PATTERN = new RegExp(`^${LOGIN_PATTERN}(?:_[a-z\\d]+|\\[bot\\]|/[a-z\\d][a-z\\d_-]*)?$`, "i");
@@ -12,8 +13,6 @@ export const groupSchema = z.looseObject({
 });
 
 export type StoredGroup = z.infer<typeof groupSchema>;
-
-export const repoListSchema = z.array(z.string());
 
 export const askSchema = z.int().check(z.positive());
 
@@ -31,16 +30,32 @@ export const readStoredGroup = (raw: unknown): StoredGroup | undefined => {
 
 const optionsFieldsSchema = z.object({ repos: z.optional(z.unknown()), ask: z.optional(z.unknown()) });
 
+const storedRepoListSchema = z.array(z.unknown());
+
+const readRepoPatterns = (raw: unknown): string[] => {
+  const list = storedRepoListSchema.safeParse(raw);
+  if (!list.success) return [];
+  return list.data.flatMap((entry) => {
+    const pattern = repoPatternSchema.safeParse(entry);
+    return pattern.success ? [pattern.data] : [];
+  });
+};
+
 export const readGroupOptions = (raw: unknown): GroupOptions => {
   const fields = optionsFieldsSchema.safeParse(raw);
   if (!fields.success) return {};
-  const repos = repoListSchema.safeParse(fields.data.repos);
+  const repos = readRepoPatterns(fields.data.repos);
   const ask = askSchema.safeParse(fields.data.ask);
   return {
-    ...(repos.success && repos.data.length > 0 ? { repos: repos.data } : {}),
+    ...(repos.length > 0 ? { repos } : {}),
     ...(ask.success ? { ask: ask.data } : {}),
   };
 };
+
+export const withOptions = (group: Group, options: GroupOptions): Group => ({
+  ...splitGroupOptions(group)[0],
+  ...options,
+});
 
 export const splitGroupOptions = ({ repos, ask, ...stored }: Group): [StoredGroup, GroupOptions] => [
   stored,

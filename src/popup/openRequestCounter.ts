@@ -134,6 +134,7 @@ export class OpenRequestCounter {
     if (this.limited) return null;
     const reply = await this.countInTab(login);
     if (reply.ok) {
+      this.failed = false;
       this.cache[key] = { count: reply.count, at: this.now() };
       this.persist();
     } else if (reply.limited) {
@@ -145,17 +146,20 @@ export class OpenRequestCounter {
     return reply.ok ? reply.count : null;
   }
 
+  private unexpiredEntries(): [string, CachedCount][] {
+    return Object.keys(this.cache).flatMap((key) => {
+      const cached = this.freshCount(key);
+      return cached === undefined ? [] : [[key, cached] as [string, CachedCount]];
+    });
+  }
+
   private persist(): void {
-    void this.area.set({ [OPEN_REQUEST_COUNTS_KEY]: this.cache }).catch(() => undefined);
+    const unexpired = Object.fromEntries(this.unexpiredEntries());
+    void this.area.set({ [OPEN_REQUEST_COUNTS_KEY]: unexpired }).catch(() => undefined);
   }
 
   private announce(): void {
-    const counts = Object.fromEntries(
-      Object.keys(this.cache).flatMap((key) => {
-        const cached = this.freshCount(key);
-        return cached === undefined ? [] : [[key, cached.count]];
-      }),
-    );
+    const counts = Object.fromEntries(this.unexpiredEntries().map(([key, { count }]) => [key, count]));
     const problem = this.limited ? LIMITED_PROBLEM : this.failed ? UNAVAILABLE_PROBLEM : "";
     this.current = { counts, problem };
     for (const listener of this.listeners) listener();

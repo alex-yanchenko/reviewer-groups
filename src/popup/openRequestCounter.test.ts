@@ -134,6 +134,41 @@ describe("OpenRequestCounter", () => {
     expect(counter.snapshot()).toEqual({ counts: { "ada-dev": 3 }, problem: "Counts unavailable." });
   });
 
+  it("stops saying counts are unavailable once a later count succeeds", async () => {
+    const countInTab = vi
+      .fn<(login: string) => Promise<CountOpenRequestsReply>>()
+      .mockResolvedValueOnce({ ok: false, error: "Counts unavailable.", limited: false })
+      .mockResolvedValueOnce({ ok: true, count: 3 });
+    const { counter } = buildCounter(countInTab);
+
+    await counter.count("ada-dev");
+    expect(counter.snapshot().problem).toBe("Counts unavailable.");
+    await counter.count("grace-ops");
+
+    expect(counter.snapshot()).toEqual({ counts: { "grace-ops": 3 }, problem: "" });
+  });
+
+  it("saves only the counts that have not expired", async () => {
+    const countInTab = counting({ "ada-dev": 2 });
+    const { counter, set } = buildCounter(countInTab, {
+      stored: {
+        [OPEN_REQUEST_COUNTS_KEY]: {
+          "grace-ops": { count: 1, at: 1_000_000 - TEN_MINUTES },
+          "linus-qa": { count: 4, at: 999_000 },
+        },
+      },
+    });
+
+    await counter.count("ada-dev");
+
+    expect(set).toHaveBeenLastCalledWith({
+      [OPEN_REQUEST_COUNTS_KEY]: {
+        "linus-qa": { count: 4, at: 999_000 },
+        "ada-dev": { count: 2, at: 1_000_000 },
+      },
+    });
+  });
+
   it("never asks about a team or a bot, whose requests the search does not show", async () => {
     const countInTab = counting({});
     const { counter } = buildCounter(countInTab);

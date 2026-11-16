@@ -99,6 +99,8 @@ describe("parseCandidatesReply", () => {
 });
 
 describe("listReviewersInTab", () => {
+  const popupTab = { id: 7, session: "popup-1" };
+
   const stubChrome = (sendMessage: ReturnType<typeof vi.fn>) => {
     const executeScript = vi.fn().mockResolvedValue([]);
     vi.stubGlobal("chrome", { tabs: { sendMessage }, scripting: { executeScript } });
@@ -109,9 +111,9 @@ describe("listReviewersInTab", () => {
     const sendMessage = vi.fn().mockResolvedValueOnce({ ok: true, candidates: [] });
     const executeScript = stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(7, "mo")).toEqual({ ok: true, candidates: [] });
+    expect(await listReviewersInTab(popupTab, "mo")).toEqual({ ok: true, candidates: [] });
     expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith(7, { type: "list-reviewers", query: "mo" });
+    expect(sendMessage).toHaveBeenCalledWith(7, { type: "list-reviewers", session: "popup-1", query: "mo" });
     expect(executeScript).not.toHaveBeenCalled();
   });
 
@@ -122,7 +124,7 @@ describe("listReviewersInTab", () => {
       .mockResolvedValueOnce({ ok: true, candidates: [] });
     const executeScript = stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(7, "")).toEqual({ ok: true, candidates: [] });
+    expect(await listReviewersInTab(popupTab, "")).toEqual({ ok: true, candidates: [] });
     expect(executeScript).toHaveBeenCalledTimes(1);
     expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ["picker.js"] });
     expect(sendMessage).toHaveBeenCalledTimes(2);
@@ -132,7 +134,7 @@ describe("listReviewersInTab", () => {
     const sendMessage = vi.fn().mockRejectedValue(new Error("Receiving end does not exist."));
     stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(7, "")).toEqual({
+    expect(await listReviewersInTab(popupTab, "")).toEqual({
       ok: false,
       error:
         "Chrome could not reach this tab (Receiving end does not exist.). Reload the pull request and try again.",

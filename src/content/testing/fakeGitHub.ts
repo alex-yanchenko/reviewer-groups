@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { ConversationCache, type GitHubPage } from "../githubPage";
 
 export interface FakePerson {
   id: number;
@@ -11,18 +12,31 @@ export interface FakePerson {
   suggested?: boolean;
 }
 
+export interface FakeConversationPage {
+  status?: number;
+  signedIn?: boolean;
+  canRequest?: boolean;
+  unreadable?: boolean;
+  redirectedToLogin?: boolean;
+  reviewerRows?: ReviewerRow[];
+  formAction?: string;
+}
+
 export interface FakeGitHubOptions {
   postStatus?: number;
   postIgnored?: boolean;
   searchAnswer?: unknown;
   missingAccounts?: string[];
   profileStatus?: number;
+  conversation?: FakeConversationPage;
 }
 
 export interface FakeGitHub {
   fetch: ReturnType<typeof vi.fn<typeof fetch>>;
+  page: GitHubPage;
   posts: URLSearchParams[];
   profileChecks: string[];
+  conversationFetches: () => number;
   requestedLogins: () => string[];
 }
 
@@ -64,19 +78,27 @@ const buildReviewerRow = (doc: Document, { login, tooltips, menuIcons = 0 }: Rev
   return row;
 };
 
-export const mountPullRequestPage = (
+const buildSidebar = (
   doc: Document,
-  { tab = "", withForm = true, staleReviewerIds = [] as number[], reviewerRows = [] as ReviewerRow[] } = {},
+  {
+    token,
+    staleReviewerIds = [],
+    reviewerRows = [],
+    formAction = `${PULL_REQUEST_PATH}/review-requests`,
+  }: {
+    token: string;
+    staleReviewerIds?: number[];
+    reviewerRows?: ReviewerRow[];
+    formAction?: string;
+  },
 ) => {
-  window.history.replaceState({}, "", `${PULL_REQUEST_PATH}${tab}`);
-  if (!withForm) return;
   const sidebarItem = doc.createElement("div");
   sidebarItem.className = "discussion-sidebar-item js-discussion-sidebar-item";
   const form = doc.createElement("form");
-  form.action = `${PULL_REQUEST_PATH}/review-requests`;
+  form.setAttribute("action", formAction);
   form.method = "post";
   form.append(
-    hiddenInput(doc, "authenticity_token", "page-token"),
+    hiddenInput(doc, "authenticity_token", token),
     hiddenInput(doc, "partial_last_updated", "1700000000"),
     ...staleReviewerIds.map((id) => hiddenInput(doc, "reviewer_user_ids[]", String(id))),
     hiddenInput(doc, "dummy-field-just-to-avoid-empty-submit", "foo"),
@@ -85,7 +107,38 @@ export const mountPullRequestPage = (
   const marker = doc.createElement("span");
   marker.className = "page-sidebar";
   sidebarItem.append(form, marker, ...reviewerRows.map((row) => buildReviewerRow(doc, row)));
-  doc.body.append(sidebarItem);
+  return sidebarItem;
+};
+
+export const mountPullRequestPage = (
+  doc: Document,
+  { tab = "", withForm = true, staleReviewerIds = [] as number[], reviewerRows = [] as ReviewerRow[] } = {},
+) => {
+  window.history.replaceState({}, "", `${PULL_REQUEST_PATH}${tab}`);
+  if (!withForm) return;
+  doc.body.append(buildSidebar(doc, { token: "page-token", staleReviewerIds, reviewerRows }));
+};
+
+const buildConversationPage = ({
+  signedIn = true,
+  canRequest = true,
+  unreadable = false,
+  reviewerRows = [],
+  formAction,
+}: FakeConversationPage): string => {
+  const doc = document.implementation.createHTMLDocument("Pull request");
+  if (!unreadable) {
+    const login = doc.createElement("meta");
+    login.name = "user-login";
+    login.content = signedIn ? "current-user" : "";
+    doc.head.append(login);
+  }
+  if (signedIn && canRequest && !unreadable) {
+    doc.body.append(
+      buildSidebar(doc, { token: "conversation-token", reviewerRows, ...(formAction ? { formAction } : {}) }),
+    );
+  }
+  return doc.documentElement.outerHTML;
 };
 
 const entryFor = (person: FakePerson) => ({
@@ -105,7 +158,13 @@ const matchesQuery = (person: FakePerson, query: string) =>
       (person.name ?? "").toLowerCase().includes(query.toLowerCase());
 
 const freshSidebar = (logins: string[]) =>
-  `<div class="discussion-sidebar-item js-discussion-sidebar-item"><form action="${PULL_REQUEST_PATH}/review-requests" method="post"></form><span class="fresh-sidebar">${logins.join(",")}</span></div>`;
+  `<div class="discussion-sidebar-item js-discussion-sidebar-item"><form action="${PULL_REQUEST_PATH}/review-requests" method="post"><input type="hidden" name="authenticity_token" value="fresh-token"></form><span class="fresh-sidebar">${logins.join(",")}</span></div>`;
+
+const loginRedirect = () => {
+  const response = new Response("<html><head></head><body>Sign in</body></html>");
+  Object.defineProperty(response, "url", { value: "https://github.com/login?return_to=%2Facme" });
+  return response;
+};
 
 export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOptions = {}): FakeGitHub => {
   const posts: URLSearchParams[] = [];
@@ -140,6 +199,15 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
     return new Response(null, { status: missing.has(login.toLowerCase()) ? 404 : 200 });
   };
 
+  let conversationFetches = 0;
+  const answerConversation = () => {
+    conversationFetches += 1;
+    const conversation = options.conversation ?? {};
+    if (conversation.status !== undefined) return new Response("", { status: conversation.status });
+    if (conversation.redirectedToLogin) return loginRedirect();
+    return new Response(buildConversationPage(conversation), { headers: { "content-type": "text/html" } });
+  };
+
   const fakeFetch = vi.fn<typeof fetch>((input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (init?.method === "POST") {
@@ -147,8 +215,16 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
       return Promise.resolve(answerPost(body));
     }
     if (init?.method === "HEAD") return Promise.resolve(answerProfile(url));
+    if (url.pathname === PULL_REQUEST_PATH) return Promise.resolve(answerConversation());
     return Promise.resolve(answerSearch(url));
   });
 
-  return { fetch: fakeFetch, posts, profileChecks, requestedLogins };
+  return {
+    fetch: fakeFetch,
+    page: { doc: document, fetch: fakeFetch, conversation: new ConversationCache() },
+    posts,
+    profileChecks,
+    conversationFetches: () => conversationFetches,
+    requestedLogins,
+  };
 };

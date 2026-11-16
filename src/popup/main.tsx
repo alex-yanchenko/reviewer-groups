@@ -32,10 +32,11 @@ const mount = async () => {
   const container = document.getElementById("root");
   if (container === null) return;
   const tab = await readActiveTab();
+  const popupTab = tab === null ? null : { id: tab.id, session: crypto.randomUUID() };
   const requestReview = (members: string[]): Promise<RequestReviewReply> =>
-    tab === null ? Promise.resolve(NO_TAB) : requestReviewInTab(tab.id, members);
+    popupTab === null ? Promise.resolve(NO_TAB) : requestReviewInTab(popupTab, members);
   const listReviewers = (query: string): Promise<ListReviewersReply> =>
-    tab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(tab.id, query);
+    popupTab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(popupTab, query);
   createRoot(container).render(
     <App
       store={store}

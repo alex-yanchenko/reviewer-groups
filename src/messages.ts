@@ -9,8 +9,11 @@ export const LIST_REVIEWERS = "list-reviewers";
 
 export type ListReviewersReply = { ok: true; candidates: ReviewerCandidate[] } | { ok: false; error: string };
 
+const popupSessionSchema = z.string().check(z.minLength(1), z.maxLength(100));
+
 export const requestReviewMessageSchema = z.object({
   type: z.literal(REQUEST_REVIEW),
+  session: popupSessionSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
 });
 
@@ -18,6 +21,7 @@ export type RequestReviewMessage = z.infer<typeof requestReviewMessageSchema>;
 
 export const listReviewersMessageSchema = z.object({
   type: z.literal(LIST_REVIEWERS),
+  session: popupSessionSchema,
   query: z.string().check(z.maxLength(100)),
 });
 

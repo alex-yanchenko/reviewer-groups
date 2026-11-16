@@ -97,12 +97,20 @@ const injectPickerAndSend = async (tabId: number, message: unknown): Promise<unk
 const sendToPicker = (tabId: number, message: unknown): Promise<unknown> =>
   chrome.tabs.sendMessage(tabId, message).catch(() => injectPickerAndSend(tabId, message));
 
-export const requestReviewInTab = (tabId: number, members: string[]): Promise<RequestReviewReply> => {
-  const message: RequestReviewMessage = { type: REQUEST_REVIEW, members };
-  return sendToPicker(tabId, message).then(parseReply, tabUnreachable);
+export interface PopupTab {
+  id: number;
+  session: string;
+}
+
+export const requestReviewInTab = (
+  { id, session }: PopupTab,
+  members: string[],
+): Promise<RequestReviewReply> => {
+  const message: RequestReviewMessage = { type: REQUEST_REVIEW, session, members };
+  return sendToPicker(id, message).then(parseReply, tabUnreachable);
 };
 
-export const listReviewersInTab = (tabId: number, query: string): Promise<ListReviewersReply> => {
-  const message: ListReviewersMessage = { type: LIST_REVIEWERS, query };
-  return sendToPicker(tabId, message).then(parseCandidatesReply, tabUnreachable);
+export const listReviewersInTab = ({ id, session }: PopupTab, query: string): Promise<ListReviewersReply> => {
+  const message: ListReviewersMessage = { type: LIST_REVIEWERS, session, query };
+  return sendToPicker(id, message).then(parseCandidatesReply, tabUnreachable);
 };

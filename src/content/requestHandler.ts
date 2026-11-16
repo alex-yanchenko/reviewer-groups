@@ -7,11 +7,15 @@ import {
   type RequestReviewReply,
 } from "../messages";
 import {
+  ConversationPageUnreadableError,
+  NotSignedInError,
+  PullRequestPageMissingError,
+  ReviewerFormMissingError,
+} from "./conversationPage";
+import {
   GitHubAnswerError,
   GitHubAnswerUnreadableError,
-  PullRequestPageMissingError,
   RequestInProgressError,
-  ReviewerFormMissingError,
   requestReviewFrom,
   searchReviewerCandidates,
   type GitHubPage,
@@ -20,8 +24,10 @@ import {
 const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([REQUEST_REVIEW, LIST_REVIEWERS]);
 
 const EXPECTED_FAILURES = [
+  ConversationPageUnreadableError,
   GitHubAnswerError,
   GitHubAnswerUnreadableError,
+  NotSignedInError,
   PullRequestPageMissingError,
   RequestInProgressError,
   ReviewerFormMissingError,
@@ -45,6 +51,7 @@ const handleListReviewers = (page: GitHubPage, message: unknown): Promise<ListRe
   if (!parsed.success) {
     return Promise.resolve({ ok: false, error: "The request did not carry a valid search." });
   }
+  page.conversation.enterSession(parsed.data.session);
   return searchReviewerCandidates(page, parsed.data.query).then(
     (candidates) => ({ ok: true, candidates }),
     replyWithExpectedFailure,
@@ -56,6 +63,7 @@ const handleRequestReview = (page: GitHubPage, message: unknown): Promise<Reques
   if (!parsed.success) {
     return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
   }
+  page.conversation.enterSession(parsed.data.session);
   return requestReviewFrom(page, parsed.data.members).then(
     (outcome) => ({ ok: true, outcome }),
     replyWithExpectedFailure,

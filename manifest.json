@@ -1,10 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Reviewer Groups",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Request GitHub pull request reviews from several people at once, and save them as groups.",
   "minimum_chrome_version": "126",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true

@@ -10,6 +10,7 @@ import {
   readReviewsLeft,
   readReviewStates,
   showFreshSidebar,
+  showsSignInForm,
   type ReviewState,
 } from "./conversationPage";
 import { GitHubAnswerError, type GitHubPage } from "./githubPage";
@@ -96,11 +97,12 @@ const readEntries = (answer: unknown): ReadEntries => {
   return { entries, requestedUnreadable: raw.some(isUnreadableRequestedEntry) };
 };
 
-const readJsonOrAskToSignIn = async (response: Response): Promise<unknown> => {
+const readJsonOrSayWhyNot = async (response: Response): Promise<unknown> => {
+  const text = await response.text();
   try {
-    return await response.json();
+    return JSON.parse(text);
   } catch {
-    throw new NotSignedInError();
+    throw showsSignInForm(text) ? new NotSignedInError() : new GitHubAnswerUnreadableError();
   }
 };
 
@@ -118,7 +120,7 @@ const fetchEntries = async (
   });
   if (landedOnLoginPage(response)) throw new NotSignedInError();
   if (!response.ok) throw new GitHubAnswerError(response.status);
-  return readEntries(await readJsonOrAskToSignIn(response));
+  return readEntries(await readJsonOrSayWhyNot(response));
 };
 
 const searchReviewers = async (

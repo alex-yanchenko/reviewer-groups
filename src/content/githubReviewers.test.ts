@@ -756,12 +756,32 @@ describe("searchReviewerCandidates", () => {
 });
 
 describe("a typeahead answer that is not GitHub's reviewer list", () => {
-  it("says to sign in when the answer is a web page rather than JSON", async () => {
+  it("says to sign in when the answer is a page with GitHub's sign-in form", async () => {
     mountPullRequestPage(document);
     const github = createFakeGitHub([]);
-    github.fetch.mockResolvedValueOnce(new Response("<html><body>Sign in</body></html>"));
+    github.fetch.mockResolvedValueOnce(
+      new Response('<html><body><form action="/session" method="post"></form></body></html>'),
+    );
 
     await expect(searchReviewerCandidates(github.page, "")).rejects.toThrow(NotSignedInError);
+  });
+
+  it("says the answer is unreadable when it is a page without a sign-in form", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([]);
+    github.fetch.mockResolvedValueOnce(
+      new Response("<html><body>Unicorn! This page is taking too long</body></html>"),
+    );
+
+    await expect(searchReviewerCandidates(github.page, "")).rejects.toThrow(GitHubAnswerUnreadableError);
+  });
+
+  it("says the answer is unreadable when it is empty", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([]);
+    github.fetch.mockResolvedValueOnce(new Response(""));
+
+    await expect(searchReviewerCandidates(github.page, "")).rejects.toThrow(GitHubAnswerUnreadableError);
   });
 
   it("says to sign in when GitHub sends the typeahead to its login screen", async () => {

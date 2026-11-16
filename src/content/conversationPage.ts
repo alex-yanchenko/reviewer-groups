@@ -5,6 +5,7 @@ const SIDEBAR_ITEM = ".discussion-sidebar-item";
 const REVIEWER_ROW = "div.d-flex.flex-items-center";
 const SIGNED_IN_LOGIN = 'meta[name="user-login"]';
 const PULL_REQUEST_PATH = /^\/[^/]+\/[^/]+\/pull\/\d+(?=\/|$)/;
+const SIGN_IN_FORM = 'form[action="/session"]';
 const LOGIN_PATHS: ReadonlySet<string> = new Set(["/login", "/session"]);
 
 export type ReviewState = "approved" | "changesRequested" | "commented";
@@ -74,7 +75,10 @@ export const landedOnLoginPage = (response: Response): boolean => {
   return url !== null && LOGIN_PATHS.has(url.pathname);
 };
 
-const fetchConversation = async ({ doc, fetch }: GitHubPage, path: string): Promise<Document> => {
+export const showsSignInForm = (html: string): boolean =>
+  new DOMParser().parseFromString(html, "text/html").querySelector(SIGN_IN_FORM) !== null;
+
+const fetchConversation =async ({ doc, fetch }: GitHubPage, path: string): Promise<Document> => {
   const response = await fetch(pullRequestUrl(doc, "", path).href, {
     headers: { Accept: "text/html" },
     credentials: "same-origin",

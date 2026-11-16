@@ -1,6 +1,5 @@
+import { listenOncePerVersion } from "./listener";
 import { handleExtensionMessage, isExtensionMessage } from "./requestHandler";
-
-const LISTENING_FLAG = "__reviewerGroupsListening";
 
 const replyUnexpectedFailure = (error: unknown) => ({
   ok: false,
@@ -9,8 +8,7 @@ const replyUnexpectedFailure = (error: unknown) => ({
 
 const page = { doc: document, fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init) };
 
-if (!(LISTENING_FLAG in globalThis)) {
-  Object.defineProperty(globalThis, LISTENING_FLAG, { value: true });
+listenOncePerVersion(globalThis, chrome.runtime.getManifest().version, () => {
   chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     if (!isExtensionMessage(message)) return false;
     handleExtensionMessage(page, message).then(sendResponse, (error: unknown) =>
@@ -18,4 +16,4 @@ if (!(LISTENING_FLAG in globalThis)) {
     );
     return true;
   });
-}
+});

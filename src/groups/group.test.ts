@@ -8,6 +8,12 @@ describe("readStoredGroup", () => {
     expect(readStoredGroup(stored)).toEqual(stored);
   });
 
+  it("keeps the fields a later version added, so saving here does not strip them", () => {
+    const stored = { id: "g1", name: "Backend", members: ["ada-dev"], colour: "teal", pinned: true };
+
+    expect(readStoredGroup(stored)).toEqual(stored);
+  });
+
   it("gives nothing back for a group with no members", () => {
     expect(readStoredGroup({ id: "g1", name: "Empty", members: [] })).toBeUndefined();
   });

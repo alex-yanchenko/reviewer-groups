@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Group } from "./group";
 import {
   GROUP_KEY_PREFIX,
+  GROUP_OPTIONS_KEY_PREFIX,
   GROUP_ORDER_KEY,
   LEGACY_GROUPS_KEY,
   loadGroups,
@@ -52,6 +53,36 @@ describe("loadGroups", () => {
 
     expect(await loadGroups(area)).toEqual({ groups: [], unreadable: 0 });
   });
+
+  it("adds each group's options from its own options key", async () => {
+    const { area } = buildArea({
+      [GROUP_ORDER_KEY]: ["g1", "g2"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: { repos: ["acme/widgets"], ask: 1 },
+      [`${GROUP_KEY_PREFIX}g2`]: frontend,
+    });
+
+    expect(await loadGroups(area)).toEqual({
+      groups: [{ ...backend, repos: ["acme/widgets"], ask: 1 }, frontend],
+      unreadable: 0,
+    });
+  });
+
+  it("keeps a group whose options cannot be read, leaving out only those options", async () => {
+    const { area } = buildArea({
+      [GROUP_ORDER_KEY]: ["g1"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: { repos: "acme/widgets", ask: 0 },
+    });
+
+    expect(await loadGroups(area)).toEqual({ groups: [backend], unreadable: 0 });
+  });
+});
+
+describe("group options keys", () => {
+  it("never start with the group key prefix, which the first release's save deletes when it does not know the id", () => {
+    expect(`${GROUP_OPTIONS_KEY_PREFIX}g1`.startsWith(GROUP_KEY_PREFIX)).toBe(false);
+  });
 });
 
 describe("saveGroups", () => {
@@ -80,6 +111,56 @@ describe("saveGroups", () => {
 
     await saveGroups(area, [backend]);
 
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("writes each group's options under their own key and the group without them", async () => {
+    const { area, set } = buildArea({});
+
+    await saveGroups(area, [{ ...backend, repos: ["acme/*"], ask: 2 }, frontend]);
+
+    expect(set).toHaveBeenCalledWith({
+      [GROUP_ORDER_KEY]: ["g1", "g2"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: { repos: ["acme/*"], ask: 2 },
+      [`${GROUP_KEY_PREFIX}g2`]: frontend,
+    });
+  });
+
+  it("removes the options of a deleted group and of a group that no longer has any", async () => {
+    const { area, remove } = buildArea({
+      [GROUP_ORDER_KEY]: ["g1", "g2"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g1`]: { ask: 1 },
+      [`${GROUP_KEY_PREFIX}g2`]: frontend,
+      [`${GROUP_OPTIONS_KEY_PREFIX}g2`]: { ask: 1 },
+    });
+
+    await saveGroups(area, [backend]);
+
+    expect(remove).toHaveBeenCalledWith([
+      `${GROUP_OPTIONS_KEY_PREFIX}g1`,
+      `${GROUP_KEY_PREFIX}g2`,
+      `${GROUP_OPTIONS_KEY_PREFIX}g2`,
+    ]);
+  });
+
+  it("keeps a stored group it cannot read, with its options, instead of deleting it", async () => {
+    const fromLaterVersion = { id: "later", name: "Later", members: [], everyoneInOrg: true };
+    const { area, set, remove } = buildArea({
+      [GROUP_ORDER_KEY]: ["later", "g1", "missing"],
+      [`${GROUP_KEY_PREFIX}later`]: fromLaterVersion,
+      [`${GROUP_OPTIONS_KEY_PREFIX}later`]: { ask: 1 },
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+    });
+
+    await saveGroups(area, [backend, frontend]);
+
+    expect(set).toHaveBeenCalledWith({
+      [GROUP_ORDER_KEY]: ["g1", "g2", "later"],
+      [`${GROUP_KEY_PREFIX}g1`]: backend,
+      [`${GROUP_KEY_PREFIX}g2`]: frontend,
+    });
     expect(remove).not.toHaveBeenCalled();
   });
 

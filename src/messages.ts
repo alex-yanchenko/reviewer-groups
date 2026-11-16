@@ -49,13 +49,13 @@ export const removeReviewersMessageSchema = z.object({
 
 export type RemoveReviewersMessage = z.infer<typeof removeReviewersMessageSchema>;
 
-export const reviewStateSchema = z.enum(["approved", "changesRequested", "commented"]);
+const reviewStateSchema = z.enum(["approved", "changesRequested", "commented"]);
 
 export type ReviewState = z.infer<typeof reviewStateSchema>;
 
 const avatarFromGitHubSchema = z.pipe(z.nullable(z.string()), z.transform(trustedAvatarUrl));
 
-export const reviewerCandidateSchema = z.object({
+const reviewerCandidateSchema = z.object({
   login: memberSchema,
   description: z.string(),
   avatarUrl: avatarFromGitHubSchema,

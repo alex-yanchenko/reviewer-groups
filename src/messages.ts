@@ -1,13 +1,19 @@
 import * as z from "zod/mini";
-import type { ReviewerCandidate, ReviewRequestOutcome, ReviewState } from "./content/githubReviewers";
+import type {
+  ReviewedPerson,
+  ReviewerCandidate,
+  ReviewerList,
+  ReviewRequestOutcome,
+  ReviewState,
+} from "./content/githubReviewers";
 import { memberSchema } from "./groups/group";
 
-export type { ReviewerCandidate, ReviewRequestOutcome, ReviewState };
+export type { ReviewedPerson, ReviewerCandidate, ReviewerList, ReviewRequestOutcome, ReviewState };
 
 export const REQUEST_REVIEW = "request-review";
 export const LIST_REVIEWERS = "list-reviewers";
 
-export type ListReviewersReply = { ok: true; candidates: ReviewerCandidate[] } | { ok: false; error: string };
+export type ListReviewersReply = ({ ok: true } & ReviewerList) | { ok: false; error: string };
 
 const popupSessionSchema = z.string().check(z.minLength(1), z.maxLength(100));
 

@@ -81,8 +81,10 @@ describe("handleExtensionMessage", () => {
     expect(github.fetch).not.toHaveBeenCalled();
   });
 
-  it("searches GitHub's reviewer list for a list-reviewers message", async () => {
-    mountPullRequestPage(document);
+  it("searches GitHub's reviewer list for a list-reviewers message, with everyone who reviewed", async () => {
+    mountPullRequestPage(document, {
+      reviewerRows: [{ login: "grace-ops", tooltips: ["grace-ops left review comments"] }],
+    });
     const github = createFakeGitHub([{ id: 101, login: "mona", name: "Mona" }]);
 
     expect(
@@ -100,6 +102,7 @@ describe("handleExtensionMessage", () => {
           reviewState: null,
         },
       ],
+      reviewed: [{ login: "grace-ops", reviewState: "commented", requested: false }],
     });
   });
 

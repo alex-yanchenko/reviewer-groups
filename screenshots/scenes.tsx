@@ -64,7 +64,7 @@ const listReviewers = (query: string): Promise<ListReviewersReply> => {
       : [...suggested, ...foundBySearch].filter(
           (person) => person.login.includes(needle) || person.name.toLowerCase().includes(needle),
         );
-  return Promise.resolve({ ok: true, candidates: people.map(toCandidate) });
+  return Promise.resolve({ ok: true, candidates: people.map(toCandidate), reviewed: [] });
 };
 
 const groups: Group[] = [

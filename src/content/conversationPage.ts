@@ -116,15 +116,23 @@ const reviewStateOf = (row: Element): ReviewState | undefined => {
   return REVIEW_STATE_TOOLTIPS.find(([pattern]) => tooltips.some((text) => pattern.test(text)))?.[1];
 };
 
-export const readReviewStates = (doc: Document): Map<string, ReviewState> => {
-  const states = new Map<string, ReviewState>();
-  const sidebar = doc.querySelector(REVIEWER_FORM)?.closest(SIDEBAR_ITEM);
-  for (const row of sidebar?.querySelectorAll(REVIEWER_ROW) ?? []) {
-    const login = [...row.querySelectorAll("a")]
-      .map((link) => link.textContent?.trim() ?? "")
-      .find((text) => text.length > 0);
-    const state = reviewStateOf(row);
-    if (login !== undefined && state !== undefined) states.set(login.toLowerCase(), state);
-  }
-  return states;
+export interface ReviewLeft {
+  login: string;
+  reviewState: ReviewState;
+}
+
+const reviewLeftIn = (row: Element): ReviewLeft[] => {
+  const login = [...row.querySelectorAll("a")]
+    .map((link) => link.textContent?.trim() ?? "")
+    .find((text) => text.length > 0);
+  const reviewState = reviewStateOf(row);
+  return login !== undefined && reviewState !== undefined ? [{ login, reviewState }] : [];
 };
+
+export const readReviewsLeft = (doc: Document): ReviewLeft[] => {
+  const sidebar = doc.querySelector(REVIEWER_FORM)?.closest(SIDEBAR_ITEM);
+  return [...(sidebar?.querySelectorAll(REVIEWER_ROW) ?? [])].flatMap(reviewLeftIn);
+};
+
+export const readReviewStates = (doc: Document): Map<string, ReviewState> =>
+  new Map(readReviewsLeft(doc).map(({ login, reviewState }) => [login.toLowerCase(), reviewState]));

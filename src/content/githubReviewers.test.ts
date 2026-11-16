@@ -10,6 +10,7 @@ import {
   GitHubAnswerUnreadableError,
   RequestInProgressError,
   requestReviewFrom,
+  listReviewers,
   searchReviewerCandidates,
 } from "./githubReviewers";
 import { createFakeGitHub, mountPullRequestPage, type FakePerson } from "./testing/fakeGitHub";
@@ -257,6 +258,50 @@ describe("requestReviewFrom", () => {
     const github = createFakeGitHub(people());
 
     await expect(requestReviewFrom(github.page, ["mona"])).rejects.toThrow(PullRequestPageMissingError);
+  });
+});
+
+describe("listReviewers", () => {
+  it("lists everyone in the Reviewers box who left a review, suggested or not, and whether each is requested again", async () => {
+    mountPullRequestPage(document, {
+      reviewerRows: [
+        { login: "ada-dev", tooltips: ["ada-dev approved these changes"] },
+        { login: "grace-ops", tooltips: ["grace-ops requested changes", "Re-request review"] },
+        { login: "linus-qa", tooltips: ["linus-qa left review comments"] },
+        { login: "joan-ux", tooltips: ["Awaiting requested review from joan-ux"] },
+      ],
+    });
+    const github = createFakeGitHub([
+      { id: 201, login: "ada-dev", suggested: false },
+      { id: 202, login: "grace-ops", selected: true },
+      { id: 203, login: "linus-qa" },
+      { id: 204, login: "joan-ux", selected: true },
+    ]);
+
+    const list = await listReviewers(github.page, "");
+
+    expect(list.reviewed).toEqual([
+      { login: "ada-dev", reviewState: "approved", requested: false },
+      { login: "grace-ops", reviewState: "changesRequested", requested: true },
+      { login: "linus-qa", reviewState: "commented", requested: false },
+    ]);
+    expect(list.candidates.map(({ login }) => login)).toEqual(["grace-ops", "linus-qa", "joan-ux"]);
+  });
+
+  it("re-requests someone who reviewed by sending them like anyone else not requested", async () => {
+    mountPullRequestPage(document, {
+      reviewerRows: [{ login: "grace-ops", tooltips: ["grace-ops requested changes"] }],
+    });
+    const github = createFakeGitHub([
+      { id: 202, login: "grace-ops" },
+      { id: 204, login: "joan-ux", selected: true },
+    ]);
+
+    const outcome = await requestReviewFrom(github.page, ["grace-ops"]);
+
+    expect(outcome.added).toEqual(["grace-ops"]);
+    expect(github.posts[0]?.getAll("reviewer_user_ids[]")).toEqual(["204", "202"]);
+    expect(github.posts[0]?.has("re_request_reviewer_id")).toBe(false);
   });
 });
 

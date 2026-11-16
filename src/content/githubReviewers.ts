@@ -3,6 +3,7 @@ import {
   pullRequestUrl,
   readConversation,
   readReviewerForm,
+  readReviewsLeft,
   readReviewStates,
   showFreshSidebar,
   type ReviewState,
@@ -114,6 +115,27 @@ export const searchReviewerCandidates = async (
   const entries = await searchReviewers(page, query);
   const reviewStates = readReviewStates(await readConversation(page));
   return entries.map((entry) => describeEntry(entry, reviewStates));
+};
+
+export interface ReviewedPerson {
+  login: string;
+  reviewState: ReviewState;
+  requested: boolean;
+}
+
+export interface ReviewerList {
+  candidates: ReviewerCandidate[];
+  reviewed: ReviewedPerson[];
+}
+
+export const listReviewers = async (page: GitHubPage, query: string): Promise<ReviewerList> => {
+  const candidates = await searchReviewerCandidates(page, query);
+  const requested = candidates.filter((candidate) => candidate.requested);
+  const reviewed = readReviewsLeft(await readConversation(page)).map((review) => ({
+    ...review,
+    requested: requested.some((candidate) => sameLogin(candidate.login, review.login)),
+  }));
+  return { candidates, reviewed };
 };
 
 const lookUpMember = async (page: GitHubPage, member: string) => ({

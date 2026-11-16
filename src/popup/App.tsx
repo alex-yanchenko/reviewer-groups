@@ -7,6 +7,8 @@ import {
   type RequestReviewReply,
   type ReviewerCandidate,
 } from "../messages";
+import { ReRequestOffer } from "./ReRequestOffer";
+import { useReviewerList } from "./useReviewerList";
 import {
   EMPTY_DIRECTORY,
   isGone,
@@ -51,15 +53,9 @@ export interface AppProps {
 
 type TypedEditor = { kind: "closed" } | { kind: "new" } | { kind: "edit"; group: Group };
 
-type Reviewers =
-  | { state: "absent" }
-  | { state: "loading" }
-  | { state: "ready"; candidates: ReviewerCandidate[]; problem: string }
-  | { state: "failed"; error: string };
-
 const SELECTION_BUSY = "selection";
 
-const SEARCH_DEBOUNCE_MS = 250;
+const RE_REQUEST_BUSY = "re-request";
 
 const toggleLogin = (selection: string[], login: string): string[] =>
   selection.some((ticked) => ticked.toLowerCase() === login.toLowerCase())
@@ -73,12 +69,6 @@ const describeUnreadableGroups = (count: number) => {
   return count === 1
     ? "1 saved group could not be read and was left out."
     : `${count} saved groups could not be read and were left out.`;
-};
-
-const reviewersAfterReply = (previous: Reviewers, reply: ListReviewersReply): Reviewers => {
-  if (reply.ok) return { state: "ready", candidates: reply.candidates, problem: "" };
-  if (previous.state === "ready") return { ...previous, problem: reply.error };
-  return { state: "failed", error: reply.error };
 };
 
 const matchesSearch = (person: ReviewerCandidate, search: string) => {
@@ -101,7 +91,6 @@ export function App({
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const [reviewers, setReviewers] = useState<Reviewers>({ state: pullRequest ? "loading" : "absent" });
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [search, setSearch] = useState("");
   const [directory, setDirectory] = useState<Directory>(EMPTY_DIRECTORY);
@@ -141,25 +130,18 @@ export function App({
     [directoryStore],
   );
 
-  useEffect(() => {
-    if (!pullRequest || !directoryReady) return;
-    let stillWanted = true;
-    const query = search.trim();
-    const timer = setTimeout(
-      () => {
-        void listReviewers(query).then((reply) => {
-          if (!stillWanted) return;
-          setReviewers((previous) => reviewersAfterReply(previous, reply));
-          if (reply.ok) updateDirectory((current) => rememberPeople(current, reply.candidates));
-        });
-      },
-      query === "" ? 0 : SEARCH_DEBOUNCE_MS,
-    );
-    return () => {
-      stillWanted = false;
-      clearTimeout(timer);
-    };
-  }, [listReviewers, pullRequest, search, directoryReady, updateDirectory]);
+  const rememberFound = useCallback(
+    (found: ReviewerCandidate[]) => updateDirectory((current) => rememberPeople(current, found)),
+    [updateDirectory],
+  );
+
+  const { reviewers, readAgain } = useReviewerList({
+    listReviewers,
+    pullRequest,
+    search,
+    ready: directoryReady,
+    onFound: rememberFound,
+  });
 
   const remembered = rememberedPeople(directory);
   const picker =
@@ -202,6 +184,7 @@ export function App({
     if (reply.ok && reply.outcome.gone.length > 0) {
       updateDirectory((current) => markGone(current, reply.outcome.gone));
     }
+    if (reply.ok) readAgain();
     return reply;
   };
 
@@ -311,6 +294,15 @@ export function App({
         <p className="status" role="status">
           {status}
         </p>
+      )}
+
+      {reviewers.state === "ready" && (
+        <ReRequestOffer
+          reviewed={reviewers.reviewed}
+          busy={busy === RE_REQUEST_BUSY}
+          locked={busy !== null}
+          onReRequest={(logins) => void requestFrom(RE_REQUEST_BUSY, logins)}
+        />
       )}
 
       {reviewers.state === "loading" && <p className="hint">Reading reviewers from the pull request…</p>}

@@ -1,121 +1,21 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Group } from "../groups/group";
-import type {
-  ListReviewersReply,
-  RequestReviewReply,
-  ReviewerCandidate,
-  ReviewRequestOutcome,
-} from "../messages";
-import { App, type DirectoryStore, type Draft, type DraftStore, type GroupStore } from "./App";
+import type { RequestReviewReply } from "../messages";
+import { App, type Draft, type GroupStore } from "./App";
 import { EMPTY_DIRECTORY, type Directory } from "./directory";
+import {
+  candidate,
+  emptyDraft,
+  fillGroupForm,
+  isTicked,
+  outcome,
+  renderApp,
+  reviewers,
+  tick,
+} from "./testing/renderApp";
 
 const backend: Group = { id: "g1", name: "Backend", members: ["mona", "hubot"] };
-
-const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): ReviewerCandidate => ({
-  login,
-  description: "",
-  avatarUrl: null,
-  team: false,
-  requested: false,
-  available: true,
-  reviewState: null,
-  ...overrides,
-});
-
-const outcome = (overrides: Partial<ReviewRequestOutcome>): ReviewRequestOutcome => ({
-  added: [],
-  alreadyRequested: [],
-  unavailable: [],
-  notFound: [],
-  unconfirmed: [],
-  gone: [],
-  ...overrides,
-});
-
-const reviewers: ReviewerCandidate[] = [
-  candidate("mona", { description: "Mona Lisa", avatarUrl: "https://avatars.githubusercontent.com/u/101" }),
-  candidate("hubot"),
-  candidate("octocat", { requested: true }),
-  candidate("acme/backend", { team: true, description: "API owners" }),
-];
-
-const emptyDraft: Draft = { selection: [], editingGroupId: null };
-
-interface RenderOptions {
-  groups?: Group[];
-  unreadable?: number;
-  saveFailure?: Error;
-  pullRequest?: string | null;
-  candidates?: ListReviewersReply;
-  searches?: Record<string, ReviewerCandidate[]>;
-  draft?: Draft;
-  draftLoad?: Promise<Draft>;
-  directory?: Directory;
-  requestReview?: (members: string[]) => Promise<RequestReviewReply>;
-}
-
-const renderApp = ({
-  groups = [],
-  unreadable = 0,
-  saveFailure,
-  pullRequest = "acme/widgets#7",
-  candidates = { ok: true, candidates: reviewers },
-  searches = {},
-  draft = emptyDraft,
-  draftLoad = Promise.resolve(draft),
-  directory = EMPTY_DIRECTORY,
-  requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
-}: RenderOptions = {}) => {
-  const directoryStore = {
-    load: vi.fn<DirectoryStore["load"]>().mockResolvedValueOnce(directory),
-    save: vi.fn<DirectoryStore["save"]>().mockResolvedValue(undefined),
-  } satisfies DirectoryStore;
-  const save = vi.fn<GroupStore["save"]>();
-  if (saveFailure === undefined) save.mockResolvedValue(undefined);
-  else save.mockRejectedValueOnce(saveFailure);
-  const store = {
-    load: vi.fn<GroupStore["load"]>().mockResolvedValueOnce({ groups, unreadable }),
-    save,
-  } satisfies GroupStore;
-  const drafts = {
-    load: vi.fn<DraftStore["load"]>().mockReturnValueOnce(draftLoad),
-    save: vi.fn<DraftStore["save"]>().mockResolvedValue(undefined),
-  } satisfies DraftStore;
-  const listReviewers = vi
-    .fn<(query: string) => Promise<ListReviewersReply>>()
-    .mockImplementation((query) =>
-      Promise.resolve(query === "" ? candidates : { ok: true, candidates: searches[query] ?? [] }),
-    );
-  render(
-    <App
-      store={store}
-      drafts={drafts}
-      directory={directoryStore}
-      requestReview={requestReview}
-      listReviewers={listReviewers}
-      newId={() => "new-id"}
-      pullRequest={pullRequest}
-    />,
-  );
-  return {
-    save: store.save,
-    saveDraft: drafts.save,
-    saveDirectory: directoryStore.save,
-    listReviewers,
-    requestReview,
-  };
-};
-
-const tick = async (login: string) => fireEvent.click(await screen.findByRole("checkbox", { name: login }));
-
-const isTicked = (login: string) => screen.getByRole<HTMLInputElement>("checkbox", { name: login }).checked;
-
-const fillGroupForm = (name: string, members: string) => {
-  fireEvent.change(screen.getByLabelText("Group name"), { target: { value: name } });
-  fireEvent.change(screen.getByLabelText("Members"), { target: { value: members } });
-  fireEvent.click(screen.getByRole("button", { name: "Save group" }));
-};
 
 afterEach(cleanup);
 
@@ -368,6 +268,7 @@ describe("App on a pull request", () => {
           candidate("spacecat", { reviewState: "commented" }),
           candidate("octocat", { requested: true }),
         ],
+        reviewed: [],
       },
     });
 
@@ -383,7 +284,9 @@ describe("App on a pull request", () => {
   });
 
   it("marks people GitHub says cannot review and does not let them be ticked", async () => {
-    renderApp({ candidates: { ok: true, candidates: [candidate("away-person", { available: false })] } });
+    renderApp({
+      candidates: { ok: true, candidates: [candidate("away-person", { available: false })], reviewed: [] },
+    });
 
     const box = await screen.findByRole<HTMLInputElement>("checkbox", { name: "away-person" });
 

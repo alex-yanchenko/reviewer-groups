@@ -1,11 +1,6 @@
-import type { ReviewerCandidate, ReviewState } from "../messages";
+import type { ReviewerCandidate } from "../messages";
 import { isGone, rememberedPerson, type Directory } from "./directory";
-
-const REVIEW_BADGES: Record<ReviewState, { label: string; className: string }> = {
-  approved: { label: "approved", className: "badge badge-done" },
-  changesRequested: { label: "changes requested", className: "badge badge-warn" },
-  commented: { label: "commented", className: "badge" },
-};
+import { REVIEW_BADGES } from "./reviewBadges";
 
 const loginKey = (login: string) => login.toLowerCase();
 

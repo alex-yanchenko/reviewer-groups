@@ -59,8 +59,28 @@ describe("parseCandidatesReply", () => {
     reviewState: "commented",
   };
 
-  it("accepts the reviewer list the page read", () => {
-    expect(parseCandidatesReply({ ok: true, candidates: [mona] })).toEqual({ ok: true, candidates: [mona] });
+  const grace = { login: "grace-ops", reviewState: "changesRequested", requested: false };
+
+  it("accepts the reviewer list the page read, with everyone who reviewed", () => {
+    expect(parseCandidatesReply({ ok: true, candidates: [mona], reviewed: [grace] })).toEqual({
+      ok: true,
+      candidates: [mona],
+      reviewed: [grace],
+    });
+  });
+
+  it("reads a reply without a reviewed list as nobody having reviewed", () => {
+    expect(parseCandidatesReply({ ok: true, candidates: [mona] })).toEqual({
+      ok: true,
+      candidates: [mona],
+      reviewed: [],
+    });
+  });
+
+  it("drops a reviewed entry whose login is not a GitHub login", () => {
+    expect(
+      parseCandidatesReply({ ok: true, candidates: [], reviewed: [grace, { ...grace, login: "<img>" }] }),
+    ).toEqual({ ok: true, candidates: [], reviewed: [grace] });
   });
 
   it("drops an avatar served from anywhere but GitHub's avatar host", () => {
@@ -68,14 +88,18 @@ describe("parseCandidatesReply", () => {
       parseCandidatesReply({
         ok: true,
         candidates: [{ ...mona, avatarUrl: "https://tracker.test/pixel.png" }],
+        reviewed: [],
       }),
-    ).toEqual({ ok: true, candidates: [{ ...mona, avatarUrl: null }] });
+    ).toEqual({ ok: true, candidates: [{ ...mona, avatarUrl: null }], reviewed: [] });
   });
 
   it("drops a candidate whose login is not a GitHub login", () => {
-    expect(parseCandidatesReply({ ok: true, candidates: [mona, { ...mona, login: "<img>" }] })).toEqual({
+    expect(
+      parseCandidatesReply({ ok: true, candidates: [mona, { ...mona, login: "<img>" }], reviewed: [] }),
+    ).toEqual({
       ok: true,
       candidates: [mona],
+      reviewed: [],
     });
   });
 
@@ -111,7 +135,7 @@ describe("listReviewersInTab", () => {
     const sendMessage = vi.fn().mockResolvedValueOnce({ ok: true, candidates: [] });
     const executeScript = stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(popupTab, "mo")).toEqual({ ok: true, candidates: [] });
+    expect(await listReviewersInTab(popupTab, "mo")).toEqual({ ok: true, candidates: [], reviewed: [] });
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage).toHaveBeenCalledWith(7, { type: "list-reviewers", session: "popup-1", query: "mo" });
     expect(executeScript).not.toHaveBeenCalled();
@@ -124,7 +148,7 @@ describe("listReviewersInTab", () => {
       .mockResolvedValueOnce({ ok: true, candidates: [] });
     const executeScript = stubChrome(sendMessage);
 
-    expect(await listReviewersInTab(popupTab, "")).toEqual({ ok: true, candidates: [] });
+    expect(await listReviewersInTab(popupTab, "")).toEqual({ ok: true, candidates: [], reviewed: [] });
     expect(executeScript).toHaveBeenCalledTimes(1);
     expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ["picker.js"] });
     expect(sendMessage).toHaveBeenCalledTimes(2);

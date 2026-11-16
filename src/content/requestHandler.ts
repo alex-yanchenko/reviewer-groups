@@ -15,9 +15,9 @@ import {
 import {
   GitHubAnswerError,
   GitHubAnswerUnreadableError,
+  listReviewers,
   RequestInProgressError,
   requestReviewFrom,
-  searchReviewerCandidates,
   type GitHubPage,
 } from "./githubReviewers";
 
@@ -52,8 +52,8 @@ const handleListReviewers = (page: GitHubPage, message: unknown): Promise<ListRe
     return Promise.resolve({ ok: false, error: "The request did not carry a valid search." });
   }
   page.conversation.enterSession(parsed.data.session);
-  return searchReviewerCandidates(page, parsed.data.query).then(
-    (candidates) => ({ ok: true, candidates }),
+  return listReviewers(page, parsed.data.query).then(
+    (list) => ({ ok: true, ...list }),
     replyWithExpectedFailure,
   );
 };

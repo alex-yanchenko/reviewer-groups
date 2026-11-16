@@ -7,6 +7,7 @@ import {
   type ListReviewersReply,
   type RequestReviewMessage,
   type RequestReviewReply,
+  type ReviewedPerson,
   type ReviewerCandidate,
 } from "../messages";
 import { trustedAvatarUrl } from "./avatar";
@@ -35,9 +36,15 @@ const replySchema = z.discriminatedUnion("ok", [
 ]);
 
 const candidatesReplySchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true), candidates: z.array(z.unknown()) }),
+  z.object({
+    ok: z.literal(true),
+    candidates: z.array(z.unknown()),
+    reviewed: z.optional(z.array(z.unknown())),
+  }),
   failureSchema,
 ]);
+
+const reviewStateSchema = z.enum(["approved", "changesRequested", "commented"]);
 
 const candidateSchema = z.object({
   login: memberSchema,
@@ -46,8 +53,19 @@ const candidateSchema = z.object({
   team: z.boolean(),
   requested: z.boolean(),
   available: z.boolean(),
-  reviewState: z.nullable(z.enum(["approved", "changesRequested", "commented"])),
+  reviewState: z.nullable(reviewStateSchema),
 });
+
+const reviewedPersonSchema = z.object({
+  login: memberSchema,
+  reviewState: reviewStateSchema,
+  requested: z.boolean(),
+});
+
+const parseReviewedPerson = (raw: unknown): ReviewedPerson[] => {
+  const result = reviewedPersonSchema.safeParse(raw);
+  return result.success ? [result.data] : [];
+};
 
 export const describePullRequest = (url: string | undefined): string | null => {
   const match = url === undefined ? null : PULL_REQUEST_URL.exec(url);
@@ -70,7 +88,7 @@ export const parseCandidatesReply = (raw: unknown): ListReviewersReply => {
   if (!result.data.ok) return result.data;
   const candidates = result.data.candidates.flatMap(parseCandidate);
   if (result.data.candidates.length > 0 && candidates.length === 0) return UNEXPECTED_ANSWER;
-  return { ok: true, candidates };
+  return { ok: true, candidates, reviewed: (result.data.reviewed ?? []).flatMap(parseReviewedPerson) };
 };
 
 export interface ActiveTab {

@@ -723,6 +723,26 @@ describe("searchReviewerCandidates", () => {
   });
 });
 
+describe("a typeahead answer that is not GitHub's reviewer list", () => {
+  it("says to sign in when the answer is a web page rather than JSON", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([]);
+    github.fetch.mockResolvedValueOnce(new Response("<html><body>Sign in</body></html>"));
+
+    await expect(searchReviewerCandidates(github.page, "")).rejects.toThrow(NotSignedInError);
+  });
+
+  it("says to sign in when GitHub sends the typeahead to its login screen", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([]);
+    const redirected = new Response("{}");
+    Object.defineProperty(redirected, "url", { value: "https://github.com/login?return_to=%2Facme" });
+    github.fetch.mockResolvedValueOnce(redirected);
+
+    await expect(searchReviewerCandidates(github.page, "")).rejects.toThrow(NotSignedInError);
+  });
+});
+
 describe("a write when the tab navigates to another pull request mid-way", () => {
   const SECOND_PULL_REQUEST = "/acme/widgets/pull/8";
 

@@ -69,7 +69,7 @@ export const pullRequestUrl = (doc: Document, suffix = "", path = pullRequestPat
 const showsPullRequestPath = (doc: Document, path: string): boolean =>
   PULL_REQUEST_PATH.exec(doc.location.pathname)?.[0].toLowerCase() === path.toLowerCase();
 
-const landedOnLoginPage = (response: Response): boolean => {
+export const landedOnLoginPage = (response: Response): boolean => {
   const url = URL.parse(response.url);
   return url !== null && LOGIN_PATHS.has(url.pathname);
 };

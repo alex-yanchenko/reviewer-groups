@@ -1,5 +1,7 @@
 import * as z from "zod/mini";
 import {
+  landedOnLoginPage,
+  NotSignedInError,
   pullRequestPath,
   pullRequestUrl,
   readAuthor,
@@ -90,6 +92,14 @@ const readEntries = (answer: unknown, requestedMustBeReadable: boolean): Reviewe
   return entries;
 };
 
+const readJsonOrAskToSignIn = async (response: Response): Promise<unknown> => {
+  try {
+    return await response.json();
+  } catch {
+    throw new NotSignedInError();
+  }
+};
+
 const searchReviewers = async (
   { doc, fetch }: GitHubPage,
   query: string,
@@ -103,8 +113,9 @@ const searchReviewers = async (
     headers: { "X-Requested-With": "XMLHttpRequest" },
     credentials: "same-origin",
   });
+  if (landedOnLoginPage(response)) throw new NotSignedInError();
   if (!response.ok) throw new GitHubAnswerError(response.status);
-  return readEntries(await response.json(), requestedMustBeReadable);
+  return readEntries(await readJsonOrAskToSignIn(response), requestedMustBeReadable);
 };
 
 const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();

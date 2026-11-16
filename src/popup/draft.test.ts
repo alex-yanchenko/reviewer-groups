@@ -17,7 +17,11 @@ describe("loadDraft", () => {
   });
 
   it("returns who the first run ticked, so the next popup in the session does not tick them again", async () => {
-    const draft = { selection: [], editingGroupId: null, firstRunTicked: ["ada-dev"] };
+    const draft = {
+      selection: [],
+      editingGroupId: null,
+      firstRunTicked: { pullRequest: "acme/widgets#7", logins: ["ada-dev"] },
+    };
     const { area } = buildArea({ [DRAFT_KEY]: draft });
 
     expect(await loadDraft(area)).toEqual(draft);
@@ -38,10 +42,12 @@ describe("loadDraft", () => {
 
 describe("emptiedDraft", () => {
   it("clears the ticks and the group being edited but keeps who the first run ticked", () => {
-    expect(emptiedDraft({ selection: ["mona"], editingGroupId: "g1", firstRunTicked: ["ada-dev"] })).toEqual({
+    const firstRunTicked = { pullRequest: "acme/widgets#7", logins: ["ada-dev"] };
+
+    expect(emptiedDraft({ selection: ["mona"], editingGroupId: "g1", firstRunTicked })).toEqual({
       selection: [],
       editingGroupId: null,
-      firstRunTicked: ["ada-dev"],
+      firstRunTicked,
     });
     expect(emptiedDraft({ selection: ["mona"], editingGroupId: "g1" })).toEqual(EMPTY_DRAFT);
   });

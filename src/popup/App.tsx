@@ -10,7 +10,7 @@ import type {
 } from "../messages";
 import { isGone, markGone, rememberedPeople, rememberPeople } from "./directory";
 import { emptiedDraft, type Draft } from "./draft";
-import { FirstRunIntro, useFirstRunTicks } from "./FirstRun";
+import { FirstRunIntro, loginsTickedHere, useFirstRunTicks } from "./FirstRun";
 import { GroupForm, type GroupDraft } from "./GroupForm";
 import { GroupList } from "./GroupList";
 import { placeForRepository } from "./groupSettings";
@@ -49,6 +49,9 @@ type TypedEditor = { kind: "closed" } | { kind: "new" } | { kind: "edit"; group:
 const SELECTION_BUSY = "selection";
 
 const RE_REQUEST_BUSY = "re-request";
+
+const withoutEarlierFirstRunTicks = ({ selection, firstRunTicked }: Draft): string[] =>
+  selection.filter((login) => !isTicked(firstRunTicked?.logins ?? [], login));
 
 const matchesSearch = (person: ReviewerCandidate, search: string) => {
   const needle = search.trim().toLowerCase();
@@ -113,9 +116,14 @@ export function App({
     active: firstRun,
     reviewers,
     draftReady,
-    alreadyTicked: draft.firstRunTicked !== undefined,
-    tick: (logins) =>
-      updateDraft({ ...draft, selection: tickLogins(draft.selection, logins), firstRunTicked: logins }),
+    pullRequest,
+    tickedOn: draft.firstRunTicked?.pullRequest,
+    tick: (tickedPullRequest, logins) =>
+      updateDraft({
+        ...draft,
+        selection: tickLogins(withoutEarlierFirstRunTicks(draft), logins),
+        firstRunTicked: { pullRequest: tickedPullRequest, logins },
+      }),
   });
 
   const remembered = rememberedPeople(directory);
@@ -209,7 +217,7 @@ export function App({
       {firstRun && (
         <FirstRunIntro
           onPullRequest={pullRequest !== null}
-          ticked={(draft.firstRunTicked ?? []).filter((login) => isTicked(draft.selection, login)).length}
+          ticked={loginsTickedHere(draft, pullRequest).length}
         />
       )}
 

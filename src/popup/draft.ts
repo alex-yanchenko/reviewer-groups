@@ -9,7 +9,7 @@ export const DRAFT_KEY = "draft";
 const draftSchema = z.object({
   selection: z.array(memberSchema),
   editingGroupId: z.nullable(z.string()),
-  firstRunTicked: z.optional(z.array(memberSchema)),
+  firstRunTicked: z.optional(z.object({ pullRequest: z.string(), logins: z.array(memberSchema) })),
 });
 
 export type Draft = z.infer<typeof draftSchema>;

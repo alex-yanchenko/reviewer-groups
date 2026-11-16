@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { isPersonLogin } from "../groups/group";
+import type { Draft } from "./draft";
+import { isTicked } from "./selection";
 import type { Reviewers } from "./useReviewerList";
 
 export const requestedHere = (reviewers: Reviewers): string[] =>
@@ -9,26 +11,34 @@ export const requestedHere = (reviewers: Reviewers): string[] =>
         .map((candidate) => candidate.login)
     : [];
 
+export const loginsTickedHere = (draft: Draft, pullRequest: string | null): string[] =>
+  draft.firstRunTicked?.pullRequest === pullRequest
+    ? draft.firstRunTicked.logins.filter((login) => isTicked(draft.selection, login))
+    : [];
+
 export const useFirstRunTicks = ({
   active,
   reviewers,
   draftReady,
-  alreadyTicked,
+  pullRequest,
+  tickedOn,
   tick,
 }: {
   active: boolean;
   reviewers: Reviewers;
   draftReady: boolean;
-  alreadyTicked: boolean;
-  tick: (logins: string[]) => void;
+  pullRequest: string | null;
+  tickedOn: string | undefined;
+  tick: (pullRequest: string, logins: string[]) => void;
 }): void => {
   const done = useRef(false);
 
   useEffect(() => {
-    if (done.current || alreadyTicked || !active || !draftReady || reviewers.state !== "ready") return;
+    if (done.current || pullRequest === null || tickedOn === pullRequest) return;
+    if (!active || !draftReady || reviewers.state !== "ready") return;
     done.current = true;
-    tick(requestedHere(reviewers));
-  }, [active, reviewers, draftReady, alreadyTicked, tick]);
+    tick(pullRequest, requestedHere(reviewers));
+  }, [active, reviewers, draftReady, pullRequest, tickedOn, tick]);
 };
 
 export function FirstRunIntro({ onPullRequest, ticked }: { onPullRequest: boolean; ticked: number }) {

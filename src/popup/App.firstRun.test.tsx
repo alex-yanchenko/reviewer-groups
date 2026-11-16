@@ -80,14 +80,71 @@ describe("App the first time it is used", () => {
     expect(saveDraft).toHaveBeenLastCalledWith({
       selection: ["ada-dev", "acme/web"],
       editingGroupId: null,
-      firstRunTicked: ["ada-dev", "acme/web"],
+      firstRunTicked: { pullRequest: "acme/widgets#7", logins: ["ada-dev", "acme/web"] },
     });
+  });
+
+  it("removes the ticks of the previous pull request, keeps hand ticks and ticks who is requested here", async () => {
+    const { saveDraft } = renderApp({
+      pullRequest: "acme/widgets#8",
+      candidates: {
+        ok: true,
+        candidates: [
+          candidate("ada-dev"),
+          candidate("grace-ops", { requested: true }),
+          candidate("linus-qa"),
+        ],
+        reviewed: [],
+      },
+      draft: {
+        selection: ["ada-dev", "linus-qa"],
+        editingGroupId: null,
+        firstRunTicked: { pullRequest: "acme/widgets#7", logins: ["ada-dev"] },
+      },
+    });
+
+    await screen.findByRole("checkbox", { name: "grace-ops" });
+
+    expect(["ada-dev", "grace-ops", "linus-qa"].map(isTicked)).toEqual([false, true, true]);
+    expect(
+      within(screen.getByRole("region", { name: "Getting started" })).getByText(
+        "The 1 already requested here are ticked, so Save as group keeps them.",
+      ),
+    ).toBeTruthy();
+    expect(saveDraft).toHaveBeenLastCalledWith({
+      selection: ["linus-qa", "grace-ops"],
+      editingGroupId: null,
+      firstRunTicked: { pullRequest: "acme/widgets#8", logins: ["grace-ops"] },
+    });
+  });
+
+  it("does not count the previous pull request's ticks in the hint", async () => {
+    renderApp({
+      pullRequest: "acme/widgets#8",
+      candidates: { ok: true, candidates: [candidate("ada-dev"), candidate("grace-ops")], reviewed: [] },
+      draft: {
+        selection: ["ada-dev"],
+        editingGroupId: null,
+        firstRunTicked: { pullRequest: "acme/widgets#7", logins: ["ada-dev"] },
+      },
+    });
+
+    await screen.findByRole("checkbox", { name: "grace-ops" });
+
+    expect(isTicked("ada-dev")).toBe(false);
+    expect(
+      within(screen.getByRole("region", { name: "Getting started" })).queryByText(/already requested here/),
+    ).toBeNull();
   });
 
   it("ticks nobody when the popup is opened again in the same session, so an unticked person stays unticked", async () => {
     renderApp({
       candidates: onThePullRequest,
-      draft: { selection: [], editingGroupId: null, firstRunTicked: ["ada-dev", "acme/web"] },
+      draft: {
+        selection: [],
+        editingGroupId: null,
+        firstRunTicked: { pullRequest: "acme/widgets#7", logins: ["ada-dev", "acme/web"] },
+      },
     });
 
     await screen.findByRole("checkbox", { name: "ada-dev" });

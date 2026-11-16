@@ -9,8 +9,8 @@ import type {
   ReviewerCandidate,
 } from "../messages";
 import { isGone, markGone, rememberedPeople, rememberPeople } from "./directory";
-import { EMPTY_DRAFT, type Draft } from "./draft";
-import { FirstRunIntro, requestedHere, useFirstRunTicks } from "./FirstRun";
+import { emptiedDraft, type Draft } from "./draft";
+import { FirstRunIntro, useFirstRunTicks } from "./FirstRun";
 import { GroupForm, type GroupDraft } from "./GroupForm";
 import { GroupList } from "./GroupList";
 import { placeForRepository } from "./groupSettings";
@@ -113,7 +113,9 @@ export function App({
     active: firstRun,
     reviewers,
     draftReady,
-    tick: (logins) => updateDraft({ ...draft, selection: tickLogins(draft.selection, logins) }),
+    alreadyTicked: draft.firstRunTicked !== undefined,
+    tick: (logins) =>
+      updateDraft({ ...draft, selection: tickLogins(draft.selection, logins), firstRunTicked: logins }),
   });
 
   const remembered = rememberedPeople(directory);
@@ -135,13 +137,13 @@ export function App({
 
   const requestSelection = async () => {
     const reply = await requestFrom(SELECTION_BUSY, draft.selection);
-    if (reply.ok) updateDraft(EMPTY_DRAFT);
+    if (reply.ok) updateDraft(emptiedDraft(draft));
   };
 
   const saveAsGroup = (name: string): string => {
     if (name.trim().length === 0) return "Give the group a name.";
     persist([...(groups ?? []), { id: newId(), name: name.trim(), members: draft.selection }]);
-    updateDraft(EMPTY_DRAFT);
+    updateDraft(emptiedDraft(draft));
     return "";
   };
 
@@ -153,18 +155,18 @@ export function App({
     if (editingGroup !== undefined) {
       replaceGroup(withOptions({ ...editingGroup, members: draft.selection }, options));
     }
-    updateDraft(EMPTY_DRAFT);
+    updateDraft(emptiedDraft(draft));
     return "";
   };
 
   const startEdit = (group: Group) => {
-    if (pickerWillShow) updateDraft({ selection: [...group.members], editingGroupId: group.id });
+    if (pickerWillShow) updateDraft({ ...draft, selection: [...group.members], editingGroupId: group.id });
     else setTypedEditor({ kind: "edit", group });
   };
 
   const deleteGroup = (group: Group) => {
     persist((groups ?? []).filter((other) => other.id !== group.id));
-    if (draft.editingGroupId === group.id) updateDraft(EMPTY_DRAFT);
+    if (draft.editingGroupId === group.id) updateDraft(emptiedDraft(draft));
   };
 
   const removeMissingMembers = (group: Group) =>
@@ -207,7 +209,7 @@ export function App({
       {firstRun && (
         <FirstRunIntro
           onPullRequest={pullRequest !== null}
-          ticked={requestedHere(reviewers).filter((login) => isTicked(draft.selection, login)).length}
+          ticked={(draft.firstRunTicked ?? []).filter((login) => isTicked(draft.selection, login)).length}
         />
       )}
 
@@ -286,7 +288,7 @@ export function App({
             onRequest={() => void requestSelection()}
             onSaveAsGroup={saveAsGroup}
             onSaveChanges={saveChanges}
-            onCancelEdit={() => updateDraft(EMPTY_DRAFT)}
+            onCancelEdit={() => updateDraft(emptiedDraft(draft))}
           />
         </>
       )}

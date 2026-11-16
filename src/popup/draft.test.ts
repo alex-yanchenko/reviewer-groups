@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DRAFT_KEY, EMPTY_DRAFT, loadDraft, saveDraft, type DraftArea } from "./draft";
+import { DRAFT_KEY, EMPTY_DRAFT, emptiedDraft, loadDraft, saveDraft, type DraftArea } from "./draft";
 
 const buildArea = (stored: Record<string, unknown>) => {
   const get = vi.fn<DraftArea["get"]>().mockResolvedValueOnce(stored);
@@ -16,6 +16,13 @@ describe("loadDraft", () => {
     expect(get).toHaveBeenCalledWith(DRAFT_KEY);
   });
 
+  it("returns who the first run ticked, so the next popup in the session does not tick them again", async () => {
+    const draft = { selection: [], editingGroupId: null, firstRunTicked: ["ada-dev"] };
+    const { area } = buildArea({ [DRAFT_KEY]: draft });
+
+    expect(await loadDraft(area)).toEqual(draft);
+  });
+
   it("starts empty when nothing was saved", async () => {
     const { area } = buildArea({});
 
@@ -26,6 +33,17 @@ describe("loadDraft", () => {
     const { area } = buildArea({ [DRAFT_KEY]: { selection: "mona" } });
 
     expect(await loadDraft(area)).toEqual(EMPTY_DRAFT);
+  });
+});
+
+describe("emptiedDraft", () => {
+  it("clears the ticks and the group being edited but keeps who the first run ticked", () => {
+    expect(emptiedDraft({ selection: ["mona"], editingGroupId: "g1", firstRunTicked: ["ada-dev"] })).toEqual({
+      selection: [],
+      editingGroupId: null,
+      firstRunTicked: ["ada-dev"],
+    });
+    expect(emptiedDraft({ selection: ["mona"], editingGroupId: "g1" })).toEqual(EMPTY_DRAFT);
   });
 });
 

@@ -13,21 +13,22 @@ export const useFirstRunTicks = ({
   active,
   reviewers,
   draftReady,
+  alreadyTicked,
   tick,
 }: {
   active: boolean;
   reviewers: Reviewers;
   draftReady: boolean;
+  alreadyTicked: boolean;
   tick: (logins: string[]) => void;
 }): void => {
   const done = useRef(false);
 
   useEffect(() => {
-    if (done.current || !active || !draftReady || reviewers.state !== "ready") return;
+    if (done.current || alreadyTicked || !active || !draftReady || reviewers.state !== "ready") return;
     done.current = true;
-    const logins = requestedHere(reviewers);
-    if (logins.length > 0) tick(logins);
-  }, [active, reviewers, draftReady, tick]);
+    tick(requestedHere(reviewers));
+  }, [active, reviewers, draftReady, alreadyTicked, tick]);
 };
 
 export function FirstRunIntro({ onPullRequest, ticked }: { onPullRequest: boolean; ticked: number }) {

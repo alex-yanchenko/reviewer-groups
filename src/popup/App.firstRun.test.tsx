@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ListReviewersReply } from "../messages";
 import { candidate, isTicked, renderApp, tick } from "./testing/renderApp";
 
@@ -70,6 +70,43 @@ describe("App the first time it is used", () => {
     await screen.findByRole("checkbox", { name: "linus-qa" });
 
     expect(isTicked("ada-dev")).toBe(false);
+  });
+
+  it("remembers in the session draft who it ticked", async () => {
+    const { saveDraft } = renderApp({ candidates: onThePullRequest });
+
+    await screen.findByRole("button", { name: "Request 2" });
+
+    expect(saveDraft).toHaveBeenLastCalledWith({
+      selection: ["ada-dev", "acme/web"],
+      editingGroupId: null,
+      firstRunTicked: ["ada-dev", "acme/web"],
+    });
+  });
+
+  it("ticks nobody when the popup is opened again in the same session, so an unticked person stays unticked", async () => {
+    renderApp({
+      candidates: onThePullRequest,
+      draft: { selection: [], editingGroupId: null, firstRunTicked: ["ada-dev", "acme/web"] },
+    });
+
+    await screen.findByRole("checkbox", { name: "ada-dev" });
+
+    expect(["ada-dev", "acme/web", "grace-ops"].map(isTicked)).toEqual([false, false, false]);
+  });
+
+  it("keeps the hint about who it ticked while a search is typed", async () => {
+    renderApp({ candidates: onThePullRequest, searches: { gr: [candidate("grace-ops")] } });
+    await screen.findByRole("button", { name: "Request 2" });
+
+    fireEvent.change(screen.getByLabelText("Search people"), { target: { value: "gr" } });
+    await vi.waitFor(() => expect(screen.queryByRole("checkbox", { name: "linus-qa" })).toBeNull());
+
+    expect(
+      within(screen.getByRole("region", { name: "Getting started" })).getByText(
+        "The 2 already requested here are ticked, so Save as group keeps them.",
+      ),
+    ).toBeTruthy();
   });
 
   it("stays out of the way once a group exists", async () => {

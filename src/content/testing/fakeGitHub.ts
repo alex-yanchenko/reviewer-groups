@@ -10,6 +10,7 @@ export interface FakePerson {
   selected?: boolean;
   disabled?: boolean;
   suggested?: boolean;
+  description?: string | null;
 }
 
 export interface FakeConversationPage {
@@ -26,6 +27,7 @@ export interface FakeConversationPage {
 export interface FakeGitHubOptions {
   postStatus?: number;
   postIgnored?: boolean;
+  dropsOnPost?: string[];
   searchAnswer?: unknown;
   missingAccounts?: string[];
   profileStatus?: number;
@@ -185,6 +187,7 @@ const entryFor = (person: FakePerson) => ({
   avatar: person.avatar ?? `https://avatars.githubusercontent.com/u/${person.id}`,
   selected: person.selected ?? false,
   disabled: person.disabled ?? false,
+  ...(person.description === undefined ? {} : { description: person.description }),
 });
 
 const matchesQuery = (person: FakePerson, query: string) =>
@@ -218,7 +221,8 @@ export const createFakeGitHub = (people: FakePerson[], options: FakeGitHubOption
     if (options.postStatus !== undefined) return new Response("", { status: options.postStatus });
     if (!options.postIgnored) {
       const ids = new Set(REVIEWER_FIELDS.flatMap((field) => body.getAll(field)));
-      for (const person of people) person.selected = ids.has(String(person.id));
+      const dropped = new Set(options.dropsOnPost ?? []);
+      for (const person of people) person.selected = ids.has(String(person.id)) && !dropped.has(person.login);
     }
     return new Response(freshSidebar(requestedLogins()), { headers: { "content-type": "text/html" } });
   };

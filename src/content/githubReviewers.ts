@@ -56,13 +56,15 @@ const reviewerEntrySchema = z.object({
   login: z.string(),
   type: z.string(),
   selected: z.boolean(),
-  disabled: z.optional(z.boolean()),
-  avatar: z.optional(z.string()),
+  disabled: z.nullish(z.boolean()),
+  avatar: z.nullish(z.string()),
   name: z.optional(z.unknown()),
-  description: z.optional(z.string()),
+  description: z.nullish(z.string()),
 });
 
 type ReviewerEntry = z.infer<typeof reviewerEntrySchema>;
+
+const claimsToBeRequestedSchema = z.object({ selected: z.literal(true) });
 
 const reviewerAnswerSchema = z.object({
   suggestions: z.optional(z.array(z.unknown())),
@@ -74,12 +76,17 @@ const readEntry = (raw: unknown): ReviewerEntry[] => {
   return result.success ? [result.data] : [];
 };
 
-const readEntries = (answer: unknown): ReviewerEntry[] => {
+const isUnreadableRequestedEntry = (raw: unknown): boolean =>
+  claimsToBeRequestedSchema.safeParse(raw).success && !reviewerEntrySchema.safeParse(raw).success;
+
+const readEntries = (answer: unknown, requestedMustBeReadable: boolean): ReviewerEntry[] => {
   const parsed = reviewerAnswerSchema.safeParse(answer);
   if (!parsed.success) throw new GitHubAnswerUnreadableError();
   const raw = [...(parsed.data.suggestions ?? []), ...(parsed.data.users ?? [])];
   const entries = raw.flatMap(readEntry);
   if (raw.length > 0 && entries.length === 0) throw new GitHubAnswerUnreadableError();
+  if (requestedMustBeReadable && raw.some(isUnreadableRequestedEntry))
+    throw new GitHubAnswerUnreadableError();
   return entries;
 };
 
@@ -87,6 +94,7 @@ const searchReviewers = async (
   { doc, fetch }: GitHubPage,
   query: string,
   path = pullRequestPath(doc),
+  requestedMustBeReadable = false,
 ): Promise<ReviewerEntry[]> => {
   const url = pullRequestUrl(doc, "/review-requests", path);
   url.searchParams.set("typeAhead", "true");
@@ -96,7 +104,7 @@ const searchReviewers = async (
     credentials: "same-origin",
   });
   if (!response.ok) throw new GitHubAnswerError(response.status);
-  return readEntries(await response.json());
+  return readEntries(await response.json(), requestedMustBeReadable);
 };
 
 const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -197,7 +205,12 @@ const sendReviewers = async (page: GitHubPage, reviewers: ReviewerEntry[], path:
 };
 
 const currentlyRequested = async (page: GitHubPage, path: string) =>
-  (await searchReviewers(page, "", path)).filter((entry) => entry.selected);
+  (await searchReviewers(page, "", path, true)).filter((entry) => entry.selected);
+
+const droppedBy = (before: ReviewerEntry[], after: ReviewerEntry[]): string[] =>
+  before
+    .filter((entry) => !after.some((remaining) => sameLogin(remaining.login, entry.login)))
+    .map((entry) => entry.login);
 
 const profilePath = (login: string) => {
   const [owner, team] = login.split("/");
@@ -244,16 +257,14 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
   }
   await sortOutGoneAccounts(page, outcome);
   if (toAdd.length === 0) return outcome;
-  await sendReviewers(
-    page,
-    [...(await currentlyRequested(page, path)), ...toAdd.map(({ entry }) => entry)],
-    path,
-  );
+  const before = await currentlyRequested(page, path);
+  await sendReviewers(page, [...before, ...toAdd.map(({ entry }) => entry)], path);
   const confirmed = await currentlyRequested(page, path);
   for (const { member } of toAdd) {
     const isRequested = confirmed.some((entry) => sameLogin(entry.login, member));
     (isRequested ? outcome.added : outcome.unconfirmed).push(member);
   }
+  outcome.unconfirmed.push(...droppedBy(before, confirmed));
   return outcome;
 };
 
@@ -293,15 +304,13 @@ const removeRequestedMembers = async (page: GitHubPage, members: readonly string
   };
   const toRemove = members.filter((member) => isRequested(current, member));
   if (toRemove.length === 0) return outcome;
-  await sendReviewers(
-    page,
-    current.filter((entry) => !members.some((member) => sameLogin(member, entry.login))),
-    path,
-  );
+  const kept = current.filter((entry) => !members.some((member) => sameLogin(member, entry.login)));
+  await sendReviewers(page, kept, path);
   const confirmed = await currentlyRequested(page, path);
   for (const member of toRemove) {
     (isRequested(confirmed, member) ? outcome.unconfirmed : outcome.removed).push(member);
   }
+  outcome.unconfirmed.push(...droppedBy(kept, confirmed));
   return outcome;
 };
 

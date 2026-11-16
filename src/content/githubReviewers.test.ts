@@ -795,3 +795,83 @@ describe("a write when the tab navigates to another pull request mid-way", () =>
     expect([...new Set(typeaheadPaths)]).toEqual(["/acme/widgets/pull/7/review-requests"]);
   });
 });
+
+describe("a write never drops someone already requested", () => {
+  it("keeps a requested team whose entry carries a null description in the post", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([
+      { id: 101, login: "mona" },
+      { id: 900, login: "acme/web", team: true, selected: true, description: null },
+    ]);
+
+    const outcome = await requestReviewFrom(github.page, ["mona"]);
+
+    expect(outcome.added).toEqual(["mona"]);
+    expect(github.posts[0]?.getAll("reviewer_team_ids[]")).toEqual(["900"]);
+    expect(github.requestedLogins()).toEqual(["mona", "acme/web"]);
+  });
+
+  it("keeps a requested team with a null description when removing someone else", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([
+      { id: 201, login: "ada-dev", selected: true },
+      { id: 900, login: "acme/web", team: true, selected: true, description: null },
+    ]);
+
+    await removeReviewersFrom(github.page, ["ada-dev"]);
+
+    expect(github.requestedLogins()).toEqual(["acme/web"]);
+  });
+
+  it("refuses to post when a requested entry cannot be read", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([], {
+      searchAnswer: {
+        users: [
+          { id: 201, type: "user", login: "ada-dev", selected: true, avatar: 42 },
+          { id: 101, type: "user", login: "mona", selected: false },
+        ],
+      },
+    });
+
+    await expect(requestReviewFrom(github.page, ["mona"])).rejects.toThrow(GitHubAnswerUnreadableError);
+    expect(github.posts).toEqual([]);
+  });
+
+  it("reports someone requested before and not requested afterwards as unconfirmed", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(
+      [
+        { id: 101, login: "mona" },
+        { id: 103, login: "octocat", selected: true },
+      ],
+      { dropsOnPost: ["octocat"] },
+    );
+
+    const outcome = await requestReviewFrom(github.page, ["mona"]);
+
+    expect(outcome).toEqual({
+      added: ["mona"],
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: [],
+      unconfirmed: ["octocat"],
+      gone: [],
+    });
+  });
+
+  it("reports someone dropped by a removal of another person as unconfirmed", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(
+      [
+        { id: 201, login: "ada-dev", selected: true },
+        { id: 202, login: "grace-ops", selected: true },
+      ],
+      { dropsOnPost: ["grace-ops"] },
+    );
+
+    const outcome = await removeReviewersFrom(github.page, ["ada-dev"]);
+
+    expect(outcome).toEqual({ removed: ["ada-dev"], notRequested: [], unconfirmed: ["grace-ops"] });
+  });
+});

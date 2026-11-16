@@ -155,6 +155,17 @@ describe("OpenRequestCounter", () => {
     expect(countInTab).toHaveBeenCalledTimes(1);
   });
 
+  it("takes a bumped count back down by one once that person is no longer requested, never below zero", async () => {
+    const { counter } = buildCounter(counting({ "ada-dev": 2, "grace-ops": 0 }));
+    await counter.count("ada-dev");
+    await counter.count("grace-ops");
+    counter.bump(["ada-dev"]);
+
+    counter.unbump(["Ada-Dev", "grace-ops", "linus-qa"]);
+
+    expect(counter.snapshot()).toEqual({ counts: { "ada-dev": 2, "grace-ops": 0 }, problem: "" });
+  });
+
   it("tells subscribers when a count arrives", async () => {
     const { counter } = buildCounter(counting({ "ada-dev": 2 }));
     const listener = vi.fn();

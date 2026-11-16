@@ -230,7 +230,11 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
           requestReview={requestReview}
           listReviewers={listReviewers}
           lookUpGroup={() => Promise.resolve({ ok: true, author: null, members: [] })}
-          rotation={{ load: () => Promise.resolve({}), record: () => Promise.resolve() }}
+          rotation={{
+            load: () => Promise.resolve({}),
+            record: () => Promise.resolve({}),
+            restore: () => Promise.resolve(),
+          }}
           openOptions={() => undefined}
           removeReviewers={(members) =>
             Promise.resolve({ ok: true, outcome: { removed: members, notRequested: [], unconfirmed: [] } })

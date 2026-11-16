@@ -84,9 +84,19 @@ export class OpenRequestCounter {
   }
 
   bump(logins: readonly string[]): void {
+    this.shift(logins, 1);
+  }
+
+  unbump(logins: readonly string[]): void {
+    this.shift(logins, -1);
+  }
+
+  private shift(logins: readonly string[], by: number): void {
     for (const login of logins) {
       const cached = this.freshCount(login.toLowerCase());
-      if (cached !== undefined) this.cache[login.toLowerCase()] = { ...cached, count: cached.count + 1 };
+      if (cached !== undefined) {
+        this.cache[login.toLowerCase()] = { ...cached, count: Math.max(0, cached.count + by) };
+      }
     }
     this.persist();
     this.announce();

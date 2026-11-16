@@ -5,9 +5,12 @@ export const LAST_ASKED_KEY = "lastAsked";
 
 export type RotationArea = Pick<StorageArea, "get" | "set">;
 
+export type AskedBefore = Record<string, number | null>;
+
 export interface RotationStore {
   load(): Promise<Record<string, number>>;
-  record(logins: string[]): Promise<void>;
+  record(logins: string[]): Promise<AskedBefore>;
+  restore(before: AskedBefore): Promise<void>;
 }
 
 const storedTimesSchema = z.record(z.string(), z.unknown());
@@ -24,14 +27,36 @@ export const loadLastAsked = async (area: RotationArea): Promise<Record<string, 
   );
 };
 
-export const recordAsked = async (area: RotationArea, logins: string[], now: number): Promise<void> => {
-  if (logins.length === 0) return;
+export const recordAsked = async (
+  area: RotationArea,
+  logins: string[],
+  now: number,
+): Promise<AskedBefore> => {
+  if (logins.length === 0) return {};
   const lastAsked = await loadLastAsked(area);
-  for (const login of logins) lastAsked[login.toLowerCase()] = now;
+  const before: AskedBefore = {};
+  for (const login of logins) {
+    const key = login.toLowerCase();
+    before[key] = lastAsked[key] ?? null;
+    lastAsked[key] = now;
+  }
+  await area.set({ [LAST_ASKED_KEY]: lastAsked });
+  return before;
+};
+
+export const restoreAsked = async (area: RotationArea, before: AskedBefore): Promise<void> => {
+  const restoring = Object.entries(before);
+  if (restoring.length === 0) return;
+  const lastAsked = await loadLastAsked(area);
+  for (const [login, time] of restoring) {
+    if (time === null) Reflect.deleteProperty(lastAsked, login);
+    else lastAsked[login] = time;
+  }
   await area.set({ [LAST_ASKED_KEY]: lastAsked });
 };
 
 export const rotationStore = (area: RotationArea, now: () => number = Date.now): RotationStore => ({
   load: () => loadLastAsked(area),
   record: (logins) => recordAsked(area, logins, now()),
+  restore: (before) => restoreAsked(area, before),
 });

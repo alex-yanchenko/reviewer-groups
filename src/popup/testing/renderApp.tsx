@@ -13,7 +13,7 @@ import type {
 import { App, type DirectoryStore, type Draft, type DraftStore, type GroupStore } from "../App";
 import { EMPTY_DIRECTORY, type Directory } from "../directory";
 import { OpenRequestCounter } from "../openRequestCounter";
-import type { RotationStore } from "../rotation";
+import type { AskedBefore, RotationStore } from "../rotation";
 
 export const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): ReviewerCandidate => ({
   login,
@@ -62,6 +62,7 @@ export interface RenderOptions {
   countReply?: (login: string) => Promise<CountOpenRequestsReply>;
   lookUpGroup?: (members: string[]) => Promise<LookUpGroupReply>;
   lastAsked?: Record<string, number>;
+  lastAskedBefore?: AskedBefore;
   removeReviewers?: (members: string[]) => Promise<RemoveReviewersReply>;
 }
 
@@ -108,11 +109,17 @@ export const renderApp = ({
   countReply,
   lookUpGroup = everyoneAvailable,
   lastAsked = {},
+  lastAskedBefore = {},
   removeReviewers = removingEveryone,
 }: RenderOptions = {}) => {
   const openOptions = vi.fn<() => void>();
-  const recordAsked = vi.fn<RotationStore["record"]>().mockResolvedValue(undefined);
-  const rotation: RotationStore = { load: () => Promise.resolve(lastAsked), record: recordAsked };
+  const recordAsked = vi.fn<RotationStore["record"]>().mockResolvedValue(lastAskedBefore);
+  const restoreAsked = vi.fn<RotationStore["restore"]>().mockResolvedValue(undefined);
+  const rotation: RotationStore = {
+    load: () => Promise.resolve(lastAsked),
+    record: recordAsked,
+    restore: restoreAsked,
+  };
   const countInTab = vi
     .fn<(login: string) => Promise<CountOpenRequestsReply>>()
     .mockImplementation(countReply ?? countingFrom(openRequestCounts));
@@ -173,6 +180,7 @@ export const renderApp = ({
     countInTab,
     openRequests,
     recordAsked,
+    restoreAsked,
     openOptions,
   };
 };

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Group } from "../groups/group";
 import type { RemoveReviewersReply, RequestReviewReply } from "../messages";
-import { outcome, renderApp } from "./testing/renderApp";
+import { candidate, outcome, renderApp } from "./testing/renderApp";
 
 afterEach(cleanup);
 
@@ -37,6 +37,41 @@ describe("App removing the people just requested", () => {
     ).toBe("status");
     expect(removeReviewers).toHaveBeenCalledWith(["ada-dev", "grace-ops"]);
     expect(screen.queryByRole("region", { name: "Remove the people just requested" })).toBeNull();
+  });
+
+  it("takes the open request count and the rotation record of the removed people back", async () => {
+    const shown = {
+      ok: true as const,
+      candidates: [candidate("ada-dev"), candidate("grace-ops")],
+      reviewed: [],
+    };
+    const removeReviewers = vi
+      .fn<(members: string[]) => Promise<RemoveReviewersReply>>()
+      .mockResolvedValueOnce({
+        ok: true,
+        outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [] },
+      });
+    const { recordAsked, restoreAsked } = renderApp({
+      groups: [ops],
+      candidates: shown,
+      openRequestCounts: { "ada-dev": 2, "grace-ops": 1 },
+      requestReview: requestAdding(["ada-dev", "grace-ops"]),
+      removeReviewers,
+      lastAskedBefore: { "ada-dev": 100, "grace-ops": null },
+    });
+    const countOf = async (login: string) =>
+      within(await screen.findByRole("listitem", { name: login })).queryByTitle(/open requests you can see/)
+        ?.textContent;
+    await vi.waitFor(async () => expect(await countOf("ada-dev")).toBe("2 open"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Request Ops" }));
+    await vi.waitFor(async () => expect(await countOf("ada-dev")).toBe("3 open"));
+    expect(recordAsked).toHaveBeenCalledWith(["ada-dev", "grace-ops"]);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove ada-dev, grace-ops" }));
+
+    await vi.waitFor(async () => expect(await countOf("ada-dev")).toBe("2 open"));
+    expect(await countOf("grace-ops")).toBe("2 open");
+    expect(restoreAsked).toHaveBeenCalledWith({ "ada-dev": 100 });
   });
 
   it("makes no offer after a request that added nobody", async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Group } from "../groups/group";
 import {
   describeRemoval,
@@ -9,7 +9,7 @@ import {
 } from "../messages";
 import { askGroup, asksSome, describeAsk } from "./askGroup";
 import type { OpenRequestCounter } from "./openRequestCounter";
-import type { RotationStore } from "./rotation";
+import type { AskedBefore, RotationStore } from "./rotation";
 
 export const REMOVE_BUSY = "remove";
 
@@ -35,13 +35,23 @@ export const useReviewRequests = ({
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [justRequested, setJustRequested] = useState<string[]>([]);
+  const askedBefore = useRef<Promise<AskedBefore>>(Promise.resolve({}));
 
   const afterWriting = (added: string[], gone: string[]) => {
     if (gone.length > 0) onGone(gone);
     if (added.length > 0) setJustRequested(added);
     openRequests.bump(added);
-    void rotation.record(added).catch(() => undefined);
+    const recorded = rotation.record(added).catch((): AskedBefore => ({}));
+    if (added.length > 0) askedBefore.current = recorded;
     onWritten();
+  };
+
+  const undoRequestRecords = async (removed: string[]): Promise<void> => {
+    openRequests.unbump(removed);
+    const before = await askedBefore.current;
+    const removedKeys = new Set(removed.map((login) => login.toLowerCase()));
+    const restoring = Object.fromEntries(Object.entries(before).filter(([login]) => removedKeys.has(login)));
+    await rotation.restore(restoring).catch(() => undefined);
   };
 
   const requestFrom = async (busyKey: string, members: string[]): Promise<RequestReviewReply> => {
@@ -84,6 +94,7 @@ export const useReviewRequests = ({
     setStatus(reply.ok ? describeRemoval(reply.outcome) : reply.error);
     if (!reply.ok) return;
     setJustRequested([]);
+    await undoRequestRecords(reply.outcome.removed);
     onWritten();
   };
 

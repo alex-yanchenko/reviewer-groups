@@ -66,6 +66,7 @@ const mount = async () => {
       lookUpGroup={lookUpGroup}
       openRequests={openRequests}
       rotation={rotationStore(localArea)}
+      openOptions={() => void chrome.runtime.openOptionsPage()}
     />,
   );
 };

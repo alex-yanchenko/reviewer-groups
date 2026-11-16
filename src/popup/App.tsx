@@ -56,6 +56,7 @@ export interface AppProps {
   openRequests: OpenRequestCounter;
   lookUpGroup: (members: string[]) => Promise<LookUpGroupReply>;
   rotation: RotationStore;
+  openOptions: () => void;
   newId: () => string;
   pullRequest: string | null;
 }
@@ -94,6 +95,7 @@ export function App({
   openRequests,
   lookUpGroup,
   rotation,
+  openOptions,
   newId,
   pullRequest,
 }: AppProps) {
@@ -350,6 +352,12 @@ export function App({
             New group
           </button>
         ))}
+
+      <footer className="footer">
+        <button type="button" className="link-button" onClick={openOptions}>
+          Export or import groups
+        </button>
+      </footer>
     </main>
   );
 }

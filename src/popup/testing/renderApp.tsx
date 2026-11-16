@@ -104,6 +104,7 @@ export const renderApp = ({
   lookUpGroup = everyoneAvailable,
   lastAsked = {},
 }: RenderOptions = {}) => {
+  const openOptions = vi.fn<() => void>();
   const recordAsked = vi.fn<RotationStore["record"]>().mockResolvedValue(undefined);
   const rotation: RotationStore = { load: () => Promise.resolve(lastAsked), record: recordAsked };
   const countInTab = vi
@@ -151,6 +152,7 @@ export const renderApp = ({
       openRequests={openRequests}
       lookUpGroup={lookUpGroup}
       rotation={rotation}
+      openOptions={openOptions}
       newId={() => "new-id"}
       pullRequest={pullRequest}
     />,
@@ -164,6 +166,7 @@ export const renderApp = ({
     countInTab,
     openRequests,
     recordAsked,
+    openOptions,
   };
 };
 

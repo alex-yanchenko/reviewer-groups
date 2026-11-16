@@ -465,6 +465,14 @@ describe("App remembering people", () => {
 });
 
 describe("App away from a pull request", () => {
+  it("opens the options page, where groups are exported and imported", async () => {
+    const { openOptions } = renderApp({ groups: [backend], pullRequest: null });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export or import groups" }));
+
+    expect(openOptions).toHaveBeenCalledTimes(1);
+  });
+
   it("does not ask the tab for reviewers and says where to go", async () => {
     const { listReviewers, requestReview } = renderApp({ groups: [backend], pullRequest: null });
 

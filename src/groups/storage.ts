@@ -60,6 +60,49 @@ const groupItems = (group: Group): [string, unknown][] => {
   return hasOptions(options) ? [...items, [optionsKey(group.id), options]] : items;
 };
 
+const SYNC_QUOTA_BYTES = 102_400;
+const SYNC_QUOTA_BYTES_PER_ITEM = 8_192;
+const SYNC_MAX_ITEMS = 512;
+const BYTES_PER_KB = 1_024;
+
+export class SyncQuotaError extends Error {
+  override readonly name = "SyncQuotaError";
+  constructor(bytes: number) {
+    super(
+      `These groups need ${Math.ceil(bytes / BYTES_PER_KB)} KB of Chrome sync storage, which holds ${SYNC_QUOTA_BYTES / BYTES_PER_KB} KB.`,
+    );
+  }
+}
+
+export class SyncItemCountError extends Error {
+  override readonly name = "SyncItemCountError";
+  constructor() {
+    super(`These groups need more than the ${SYNC_MAX_ITEMS} items Chrome sync storage holds.`);
+  }
+}
+
+export class SyncItemTooLargeError extends Error {
+  override readonly name = "SyncItemTooLargeError";
+  constructor(groupName: string) {
+    super(`The group "${groupName}" is too large for one Chrome sync item.`);
+  }
+}
+
+const itemBytes = (key: string, value: unknown): number =>
+  new TextEncoder().encode(key + JSON.stringify(value)).length;
+
+const checkSyncQuota = (stored: Record<string, unknown>, items: Record<string, unknown>, groups: Group[]) => {
+  for (const group of groups) {
+    for (const [key, value] of groupItems(group)) {
+      if (itemBytes(key, value) > SYNC_QUOTA_BYTES_PER_ITEM) throw new SyncItemTooLargeError(group.name);
+    }
+  }
+  const afterWrite = { ...stored, ...items };
+  if (Object.keys(afterWrite).length > SYNC_MAX_ITEMS) throw new SyncItemCountError();
+  const bytes = Object.entries(afterWrite).reduce((total, [key, value]) => total + itemBytes(key, value), 0);
+  if (bytes > SYNC_QUOTA_BYTES) throw new SyncQuotaError(bytes);
+};
+
 export const saveGroups = async (area: StorageArea, groups: Group[]): Promise<void> => {
   const stored = await area.get(null);
   const saving = new Set(groups.map((group) => group.id));
@@ -68,6 +111,7 @@ export const saveGroups = async (area: StorageArea, groups: Group[]): Promise<vo
     [GROUP_ORDER_KEY]: keptIds,
     ...Object.fromEntries(groups.flatMap(groupItems)),
   };
+  checkSyncQuota(stored, items, groups);
   await area.set(items);
   const keptKeys = new Set([
     ...Object.keys(items),

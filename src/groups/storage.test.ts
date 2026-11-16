@@ -7,6 +7,7 @@ import {
   LEGACY_GROUPS_KEY,
   loadGroups,
   saveGroups,
+  SyncQuotaError,
   type StorageArea,
 } from "./storage";
 
@@ -162,6 +163,40 @@ describe("saveGroups", () => {
       [`${GROUP_KEY_PREFIX}g2`]: frontend,
     });
     expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("refuses a save over Chrome's sync quota before writing anything", async () => {
+    const crowd = Array.from({ length: 60 }, (_, index) => ({
+      id: `g${index}`,
+      name: `Group ${index}`,
+      members: Array.from({ length: 100 }, (_, member) => `member-number-${index}-${member}`),
+    }));
+    const { area, set, remove } = buildArea({});
+
+    await expect(saveGroups(area, crowd)).rejects.toThrow(SyncQuotaError);
+    expect(set).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("refuses a group too large for one sync item before writing anything", async () => {
+    const huge = {
+      id: "g1",
+      name: "Everyone",
+      members: Array.from({ length: 500 }, (_, member) => `member-number-${member}`),
+    };
+    const { area, set } = buildArea({});
+
+    await expect(saveGroups(area, [huge])).rejects.toThrow(
+      'The group "Everyone" is too large for one Chrome sync item.',
+    );
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("counts what is already stored toward the sync quota", async () => {
+    const { area, set } = buildArea({ unrelated: "x".repeat(102_350) });
+
+    await expect(saveGroups(area, [backend])).rejects.toThrow(SyncQuotaError);
+    expect(set).not.toHaveBeenCalled();
   });
 
   it("passes on a write Chrome refuses, such as one over the sync quota", async () => {

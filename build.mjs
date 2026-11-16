@@ -13,6 +13,7 @@ const copyStaticFiles = async () => {
   await mkdir(dist, { recursive: true });
   await cp(resolve(root, "manifest.json"), resolve(dist, "manifest.json"));
   await cp(resolve(root, "src/popup/popup.html"), resolve(dist, "popup.html"));
+  await cp(resolve(root, "src/options/options.html"), resolve(dist, "options.html"));
   await mkdir(resolve(dist, "icons"), { recursive: true });
   const icons = (await readdir(resolve(root, "icons"))).filter((file) => file.endsWith(".png"));
   await Promise.all(icons.map((file) => cp(resolve(root, "icons", file), resolve(dist, "icons", file))));
@@ -32,6 +33,7 @@ await rm(dist, { recursive: true, force: true });
 const ctx = await context({
   entryPoints: [
     { in: resolve(root, "src/popup/main.tsx"), out: "popup" },
+    { in: resolve(root, "src/options/main.tsx"), out: "options" },
     { in: resolve(root, "src/content/picker.ts"), out: "picker" },
   ],
   outdir: dist,

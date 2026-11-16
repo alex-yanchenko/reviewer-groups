@@ -11,6 +11,7 @@ import {
   RequestInProgressError,
   requestReviewFrom,
   listReviewers,
+  lookUpGroup,
   searchReviewerCandidates,
 } from "./githubReviewers";
 import { createFakeGitHub, mountPullRequestPage, type FakePerson } from "./testing/fakeGitHub";
@@ -302,6 +303,66 @@ describe("listReviewers", () => {
     expect(outcome.added).toEqual(["grace-ops"]);
     expect(github.posts[0]?.getAll("reviewer_user_ids[]")).toEqual(["204", "202"]);
     expect(github.posts[0]?.has("re_request_reviewer_id")).toBe(false);
+  });
+});
+
+describe("lookUpGroup", () => {
+  it("describes each member as GitHub offers them, with any review left, and names the pull request's author", async () => {
+    mountPullRequestPage(document, {
+      author: "author-dev",
+      reviewerRows: [{ login: "joan-ux", tooltips: ["joan-ux left review comments"] }],
+    });
+    const github = createFakeGitHub([
+      { id: 201, login: "ada-dev", suggested: false },
+      { id: 202, login: "grace-ops", selected: true },
+      { id: 203, login: "linus-qa", disabled: true },
+      { id: 204, login: "joan-ux" },
+    ]);
+
+    const lookup = await lookUpGroup(github.page, [
+      "ada-dev",
+      "grace-ops",
+      "linus-qa",
+      "joan-ux",
+      "stranger",
+    ]);
+
+    const person = (login: string, id: number, overrides: object = {}) => ({
+      login,
+      description: "",
+      avatarUrl: `https://avatars.githubusercontent.com/u/${id}`,
+      team: false,
+      requested: false,
+      available: true,
+      reviewState: null,
+      ...overrides,
+    });
+    expect(lookup).toEqual({
+      author: "author-dev",
+      members: [
+        { member: "ada-dev", candidate: person("ada-dev", 201) },
+        { member: "grace-ops", candidate: person("grace-ops", 202, { requested: true }) },
+        { member: "linus-qa", candidate: person("linus-qa", 203, { available: false }) },
+        { member: "joan-ux", candidate: person("joan-ux", 204, { reviewState: "commented" }) },
+        { member: "stranger", candidate: null },
+      ],
+    });
+  });
+
+  it("reads the author from the Conversation page on another tab", async () => {
+    mountPullRequestPage(document, { tab: "/files", withForm: false });
+    const github = createFakeGitHub([{ id: 201, login: "ada-dev" }], {
+      conversation: { author: "author-dev" },
+    });
+
+    expect((await lookUpGroup(github.page, ["ada-dev"])).author).toBe("author-dev");
+  });
+
+  it("leaves the author unknown when the page does not show one", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub([{ id: 201, login: "ada-dev" }]);
+
+    expect((await lookUpGroup(github.page, ["ada-dev"])).author).toBeNull();
   });
 });
 

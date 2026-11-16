@@ -1,11 +1,18 @@
 import { createRoot } from "react-dom/client";
 import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
-import type { ListReviewersReply, RequestReviewReply } from "../messages";
-import { countOpenRequestsInTab, listReviewersInTab, readActiveTab, requestReviewInTab } from "./activeTab";
+import type { ListReviewersReply, LookUpGroupReply, RequestReviewReply } from "../messages";
+import {
+  countOpenRequestsInTab,
+  listReviewersInTab,
+  lookUpGroupInTab,
+  readActiveTab,
+  requestReviewInTab,
+} from "./activeTab";
 import { App, type DirectoryStore, type DraftStore, type GroupStore } from "./App";
 import { loadDirectory, saveDirectory } from "./directory";
 import { loadDraft, saveDraft } from "./draft";
 import { OpenRequestCounter } from "./openRequestCounter";
+import { rotationStore } from "./rotation";
 import "./popup.css";
 
 const syncArea: StorageArea = chrome.storage.sync;
@@ -38,6 +45,8 @@ const mount = async () => {
     popupTab === null ? Promise.resolve(NO_TAB) : requestReviewInTab(popupTab, members);
   const listReviewers = (query: string): Promise<ListReviewersReply> =>
     popupTab === null ? Promise.resolve(NO_TAB) : listReviewersInTab(popupTab, query);
+  const lookUpGroup = (members: string[]): Promise<LookUpGroupReply> =>
+    popupTab === null ? Promise.resolve(NO_TAB) : lookUpGroupInTab(popupTab, members);
   const openRequests = new OpenRequestCounter({
     countInTab: (login) =>
       popupTab === null
@@ -54,7 +63,9 @@ const mount = async () => {
       pullRequest={tab?.pullRequest ?? null}
       requestReview={requestReview}
       listReviewers={listReviewers}
+      lookUpGroup={lookUpGroup}
       openRequests={openRequests}
+      rotation={rotationStore(localArea)}
     />,
   );
 };

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { withOptions, type Group, type GroupOptions } from "../groups/group";
 import { repositoryOf } from "../groups/repoPatterns";
 import type { StoredGroups } from "../groups/storage";
-import {
-  describeReply,
-  type ListReviewersReply,
-  type RequestReviewReply,
-  type ReviewerCandidate,
+import type {
+  ListReviewersReply,
+  LookUpGroupReply,
+  RequestReviewReply,
+  ReviewerCandidate,
 } from "../messages";
 import {
   EMPTY_DIRECTORY,
@@ -23,8 +23,10 @@ import { placeForRepository } from "./groupSettings";
 import { PeoplePicker } from "./PeoplePicker";
 import type { OpenRequestCounter } from "./openRequestCounter";
 import { ReRequestOffer } from "./ReRequestOffer";
+import type { RotationStore } from "./rotation";
 import { useOpenRequestCounts } from "./useOpenRequestCounts";
 import { useReviewerList } from "./useReviewerList";
+import { useReviewRequests } from "./useReviewRequests";
 import { rankSearchResults } from "./searchResults";
 import { SelectionBar } from "./SelectionBar";
 
@@ -52,6 +54,8 @@ export interface AppProps {
   requestReview: (members: string[]) => Promise<RequestReviewReply>;
   listReviewers: (query: string) => Promise<ListReviewersReply>;
   openRequests: OpenRequestCounter;
+  lookUpGroup: (members: string[]) => Promise<LookUpGroupReply>;
+  rotation: RotationStore;
   newId: () => string;
   pullRequest: string | null;
 }
@@ -88,14 +92,14 @@ export function App({
   requestReview,
   listReviewers,
   openRequests,
+  lookUpGroup,
+  rotation,
   newId,
   pullRequest,
 }: AppProps) {
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [loadProblem, setLoadProblem] = useState("");
   const [typedEditor, setTypedEditor] = useState<TypedEditor>({ kind: "closed" });
-  const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [search, setSearch] = useState("");
@@ -149,6 +153,14 @@ export function App({
     onFound: rememberFound,
   });
   const counts = useOpenRequestCounts(openRequests, reviewers);
+  const { busy, status, requestFrom, requestGroup } = useReviewRequests({
+    requestReview,
+    lookUpGroup,
+    openRequests,
+    rotation,
+    onGone: (gone) => updateDirectory((current) => markGone(current, gone)),
+    onWritten: readAgain,
+  });
 
   const remembered = rememberedPeople(directory);
   const picker =
@@ -180,19 +192,6 @@ export function App({
       setGroups(previous);
       setNotice(`Groups could not be saved: ${messageOf(error)}`);
     });
-  };
-
-  const requestFrom = async (busyKey: string, members: string[]): Promise<RequestReviewReply> => {
-    setBusy(busyKey);
-    setStatus("");
-    const reply = await requestReview(members);
-    setBusy(null);
-    setStatus(describeReply(reply));
-    if (reply.ok && reply.outcome.gone.length > 0) {
-      updateDirectory((current) => markGone(current, reply.outcome.gone));
-    }
-    if (reply.ok) readAgain();
-    return reply;
   };
 
   const requestSelection = async () => {
@@ -275,7 +274,7 @@ export function App({
           canRequest={pullRequest !== null}
           busy={busy}
           actions={{
-            onRequest: (group) => void requestFrom(group.id, group.members),
+            onRequest: (group) => void requestGroup(group),
             onEdit: startEdit,
             onDelete: deleteGroup,
             onRemoveMissing: removeMissingMembers,

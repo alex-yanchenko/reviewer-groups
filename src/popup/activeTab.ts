@@ -3,11 +3,14 @@ import { memberSchema } from "../groups/group";
 import {
   COUNT_OPEN_REQUESTS,
   LIST_REVIEWERS,
+  LOOK_UP_GROUP,
   REQUEST_REVIEW,
   type CountOpenRequestsMessage,
   type CountOpenRequestsReply,
   type ListReviewersMessage,
   type ListReviewersReply,
+  type LookUpGroupMessage,
+  type LookUpGroupReply,
   type RequestReviewMessage,
   type RequestReviewReply,
   type ReviewedPerson,
@@ -94,6 +97,29 @@ export const parseCandidatesReply = (raw: unknown): ListReviewersReply => {
   return { ok: true, candidates, reviewed: (result.data.reviewed ?? []).flatMap(parseReviewedPerson) };
 };
 
+const lookUpReplySchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    author: z.nullable(z.string()),
+    members: z.array(z.object({ member: memberSchema, candidate: z.nullable(candidateSchema) })),
+  }),
+  failureSchema,
+]);
+
+export const parseLookUpReply = (raw: unknown): LookUpGroupReply => {
+  const result = lookUpReplySchema.safeParse(raw);
+  if (!result.success) return UNEXPECTED_ANSWER;
+  if (!result.data.ok) return result.data;
+  return {
+    ...result.data,
+    members: result.data.members.map(({ member, candidate }) => ({
+      member,
+      candidate:
+        candidate === null ? null : { ...candidate, avatarUrl: trustedAvatarUrl(candidate.avatarUrl) },
+    })),
+  };
+};
+
 export interface ActiveTab {
   id: number;
   pullRequest: string | null;
@@ -139,6 +165,11 @@ const countReplySchema = z.discriminatedUnion("ok", [
 export const parseCountReply = (raw: unknown): CountOpenRequestsReply => {
   const result = countReplySchema.safeParse(raw);
   return result.success ? result.data : { ok: false, error: "Counts unavailable.", limited: false };
+};
+
+export const lookUpGroupInTab = ({ id, session }: PopupTab, members: string[]): Promise<LookUpGroupReply> => {
+  const message: LookUpGroupMessage = { type: LOOK_UP_GROUP, session, members };
+  return sendToPicker(id, message).then(parseLookUpReply, tabUnreachable);
 };
 
 export const countOpenRequestsInTab = (

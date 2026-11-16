@@ -18,6 +18,18 @@ export function GroupSettingsFields({
         />
       </label>
       <p className="hint">Optional. On these repositories' pull requests the group is listed first.</p>
+      <label className="field">
+        <span>Ask how many</span>
+        <input
+          value={settings.ask}
+          onChange={(event) => onChange({ ...settings, ask: event.target.value })}
+          inputMode="numeric"
+          placeholder="Everyone"
+        />
+      </label>
+      <p className="hint">
+        Optional. Requests this many members, those with the fewest open review requests.
+      </p>
     </>
   );
 }

@@ -1,6 +1,7 @@
 import * as z from "zod/mini";
 import {
   pullRequestUrl,
+  readAuthor,
   readConversation,
   readReviewerForm,
   readReviewsLeft,
@@ -142,6 +143,29 @@ const lookUpMember = async (page: GitHubPage, member: string) => ({
   member,
   entry: (await searchReviewers(page, member)).find((entry) => sameLogin(entry.login, member)),
 });
+
+export interface MemberLookup {
+  member: string;
+  candidate: ReviewerCandidate | null;
+}
+
+export interface GroupLookup {
+  members: MemberLookup[];
+  author: string | null;
+}
+
+export const lookUpGroup = async (page: GitHubPage, members: readonly string[]): Promise<GroupLookup> => {
+  const found = await Promise.all(members.map((member) => lookUpMember(page, member)));
+  const conversation = await readConversation(page);
+  const reviewStates = readReviewStates(conversation);
+  return {
+    members: found.map(({ member, entry }) => ({
+      member,
+      candidate: entry === undefined ? null : describeEntry(entry, reviewStates),
+    })),
+    author: readAuthor(conversation),
+  };
+};
 
 const reviewerFormBody = (form: HTMLFormElement, reviewers: ReviewerEntry[]): URLSearchParams => {
   const body = new URLSearchParams();

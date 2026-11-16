@@ -232,7 +232,7 @@ describe("App on a pull request", () => {
       await draftLoad;
     });
 
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Save changes" })).toBeTruthy();
     expect(isTicked("mona")).toBe(true);
   });
 

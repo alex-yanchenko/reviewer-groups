@@ -3,10 +3,13 @@ import {
   countOpenRequestsMessageSchema,
   LIST_REVIEWERS,
   listReviewersMessageSchema,
+  LOOK_UP_GROUP,
+  lookUpGroupMessageSchema,
   REQUEST_REVIEW,
   requestReviewMessageSchema,
   type CountOpenRequestsReply,
   type ListReviewersReply,
+  type LookUpGroupReply,
   type RequestReviewReply,
 } from "../messages";
 import {
@@ -19,18 +22,20 @@ import {
   GitHubAnswerError,
   GitHubAnswerUnreadableError,
   listReviewers,
+  lookUpGroup,
   RequestInProgressError,
   requestReviewFrom,
   type GitHubPage,
 } from "./githubReviewers";
 import { countOpenReviewRequests, SearchAnswerUnreadableError, SearchLimitedError } from "./openRequests";
 
-type ExtensionReply = RequestReviewReply | ListReviewersReply | CountOpenRequestsReply;
+type ExtensionReply = RequestReviewReply | ListReviewersReply | CountOpenRequestsReply | LookUpGroupReply;
 
 const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([
   REQUEST_REVIEW,
   LIST_REVIEWERS,
   COUNT_OPEN_REQUESTS,
+  LOOK_UP_GROUP,
 ]);
 
 const EXPECTED_FAILURES = [
@@ -100,10 +105,23 @@ const handleCountOpenRequests = (page: GitHubPage, message: unknown): Promise<Co
   );
 };
 
+const handleLookUpGroup = (page: GitHubPage, message: unknown): Promise<LookUpGroupReply> => {
+  const parsed = lookUpGroupMessageSchema.safeParse(message);
+  if (!parsed.success) {
+    return Promise.resolve({ ok: false, error: "The request did not carry a valid member list." });
+  }
+  page.conversation.enterSession(parsed.data.session);
+  return lookUpGroup(page, parsed.data.members).then(
+    (lookup) => ({ ok: true, ...lookup }),
+    replyWithExpectedFailure,
+  );
+};
+
 const HANDLERS: Record<string, (page: GitHubPage, message: unknown) => Promise<ExtensionReply>> = {
   [REQUEST_REVIEW]: handleRequestReview,
   [LIST_REVIEWERS]: handleListReviewers,
   [COUNT_OPEN_REQUESTS]: handleCountOpenRequests,
+  [LOOK_UP_GROUP]: handleLookUpGroup,
 };
 
 export const handleExtensionMessage = async (

@@ -4,6 +4,7 @@ import type { Group } from "../../groups/group";
 import type {
   CountOpenRequestsReply,
   ListReviewersReply,
+  LookUpGroupReply,
   RequestReviewReply,
   ReviewerCandidate,
   ReviewRequestOutcome,
@@ -11,6 +12,7 @@ import type {
 import { App, type DirectoryStore, type Draft, type DraftStore, type GroupStore } from "../App";
 import { EMPTY_DIRECTORY, type Directory } from "../directory";
 import { OpenRequestCounter } from "../openRequestCounter";
+import type { RotationStore } from "../rotation";
 
 export const candidate = (login: string, overrides: Partial<ReviewerCandidate> = {}): ReviewerCandidate => ({
   login,
@@ -57,7 +59,16 @@ export interface RenderOptions {
   requestReview?: (members: string[]) => Promise<RequestReviewReply>;
   openRequestCounts?: Record<string, number>;
   countReply?: (login: string) => Promise<CountOpenRequestsReply>;
+  lookUpGroup?: (members: string[]) => Promise<LookUpGroupReply>;
+  lastAsked?: Record<string, number>;
 }
+
+const everyoneAvailable = (members: string[]): Promise<LookUpGroupReply> =>
+  Promise.resolve({
+    ok: true,
+    author: null,
+    members: members.map((member) => ({ member, candidate: candidate(member) })),
+  });
 
 const countingFrom = (counts: Record<string, number>) =>
   vi
@@ -90,7 +101,11 @@ export const renderApp = ({
   requestReview = vi.fn<(members: string[]) => Promise<RequestReviewReply>>(),
   openRequestCounts = {},
   countReply,
+  lookUpGroup = everyoneAvailable,
+  lastAsked = {},
 }: RenderOptions = {}) => {
+  const recordAsked = vi.fn<RotationStore["record"]>().mockResolvedValue(undefined);
+  const rotation: RotationStore = { load: () => Promise.resolve(lastAsked), record: recordAsked };
   const countInTab = vi
     .fn<(login: string) => Promise<CountOpenRequestsReply>>()
     .mockImplementation(countReply ?? countingFrom(openRequestCounts));
@@ -134,6 +149,8 @@ export const renderApp = ({
       requestReview={countedRequest}
       listReviewers={listReviewers}
       openRequests={openRequests}
+      lookUpGroup={lookUpGroup}
+      rotation={rotation}
       newId={() => "new-id"}
       pullRequest={pullRequest}
     />,
@@ -146,6 +163,7 @@ export const renderApp = ({
     requestReview,
     countInTab,
     openRequests,
+    recordAsked,
   };
 };
 

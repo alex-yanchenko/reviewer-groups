@@ -4,6 +4,7 @@ import {
   listReviewersInTab,
   parseCandidatesReply,
   parseCountReply,
+  parseLookUpReply,
   parseReply,
 } from "./activeTab";
 
@@ -125,6 +126,51 @@ describe("parseCandidatesReply", () => {
       ok: false,
       error: "The page sent back an unexpected answer.",
     });
+  });
+});
+
+describe("parseLookUpReply", () => {
+  const ada = {
+    login: "ada-dev",
+    description: "",
+    avatarUrl: "https://avatars.githubusercontent.com/u/201",
+    team: false,
+    requested: false,
+    available: true,
+    reviewState: null,
+  };
+
+  it("accepts each member as the page found them, and the author", () => {
+    const reply = {
+      ok: true,
+      author: "author-dev",
+      members: [
+        { member: "ada-dev", candidate: ada },
+        { member: "stranger", candidate: null },
+      ],
+    };
+
+    expect(parseLookUpReply(reply)).toEqual(reply);
+  });
+
+  it("drops an avatar served from anywhere but GitHub's avatar host", () => {
+    expect(
+      parseLookUpReply({
+        ok: true,
+        author: null,
+        members: [{ member: "ada-dev", candidate: { ...ada, avatarUrl: "https://tracker.test/pixel.png" } }],
+      }),
+    ).toEqual({
+      ok: true,
+      author: null,
+      members: [{ member: "ada-dev", candidate: { ...ada, avatarUrl: null } }],
+    });
+  });
+
+  it("turns a member it cannot read into a failure the popup can show", () => {
+    expect(
+      parseLookUpReply({ ok: true, author: null, members: [{ member: "ada-dev", candidate: { login: 1 } }] }),
+    ).toEqual({ ok: false, error: "The page sent back an unexpected answer." });
   });
 });
 

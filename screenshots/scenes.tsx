@@ -217,6 +217,8 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
           directory={{ load: () => Promise.resolve(EMPTY_DIRECTORY), save: () => Promise.resolve() }}
           requestReview={requestReview}
           listReviewers={listReviewers}
+          lookUpGroup={() => Promise.resolve({ ok: true, author: null, members: [] })}
+          rotation={{ load: () => Promise.resolve({}), record: () => Promise.resolve() }}
           openRequests={
             new OpenRequestCounter({
               countInTab: () => Promise.resolve({ ok: true, count: 1 }),

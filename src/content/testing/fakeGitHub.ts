@@ -20,6 +20,7 @@ export interface FakeConversationPage {
   redirectedToLogin?: boolean;
   reviewerRows?: ReviewerRow[];
   formAction?: string;
+  author?: string;
 }
 
 export interface FakeGitHubOptions {
@@ -113,11 +114,29 @@ const buildSidebar = (
   return sidebarItem;
 };
 
+const buildPullRequestHeader = (doc: Document, author: string) => {
+  const header = doc.createElement("div");
+  header.className = "gh-header-meta";
+  const link = doc.createElement("a");
+  link.className = "author Link--secondary";
+  link.href = `/${author}`;
+  link.textContent = author;
+  header.append(link, " wants to merge 2 commits");
+  return header;
+};
+
 export const mountPullRequestPage = (
   doc: Document,
-  { tab = "", withForm = true, staleReviewerIds = [] as number[], reviewerRows = [] as ReviewerRow[] } = {},
+  {
+    tab = "",
+    withForm = true,
+    staleReviewerIds = [] as number[],
+    reviewerRows = [] as ReviewerRow[],
+    author = undefined as string | undefined,
+  } = {},
 ) => {
   window.history.replaceState({}, "", `${PULL_REQUEST_PATH}${tab}`);
+  if (author !== undefined) doc.body.append(buildPullRequestHeader(doc, author));
   if (!withForm) return;
   doc.body.append(buildSidebar(doc, { token: "page-token", staleReviewerIds, reviewerRows }));
 };
@@ -128,6 +147,7 @@ const buildConversationPage = ({
   unreadable = false,
   reviewerRows = [],
   formAction,
+  author,
 }: FakeConversationPage): string => {
   const doc = document.implementation.createHTMLDocument("Pull request");
   if (!unreadable) {
@@ -136,6 +156,7 @@ const buildConversationPage = ({
     login.content = signedIn ? "current-user" : "";
     doc.head.append(login);
   }
+  if (author !== undefined) doc.body.append(buildPullRequestHeader(doc, author));
   if (signedIn && canRequest && !unreadable) {
     doc.body.append(
       buildSidebar(doc, { token: "conversation-token", reviewerRows, ...(formAction ? { formAction } : {}) }),

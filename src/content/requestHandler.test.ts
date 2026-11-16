@@ -129,6 +129,51 @@ describe("handleExtensionMessage", () => {
   });
 });
 
+describe("handleExtensionMessage looking up a group", () => {
+  it("answers with each member as GitHub offers them and the author", async () => {
+    mountPullRequestPage(document, { author: "author-dev" });
+    const github = createFakeGitHub([{ id: 201, login: "ada-dev" }]);
+
+    expect(
+      await handleExtensionMessage(github.page, {
+        type: "look-up-group",
+        session: "popup-1",
+        members: ["ada-dev", "stranger"],
+      }),
+    ).toEqual({
+      ok: true,
+      author: "author-dev",
+      members: [
+        {
+          member: "ada-dev",
+          candidate: {
+            login: "ada-dev",
+            description: "",
+            avatarUrl: "https://avatars.githubusercontent.com/u/201",
+            team: false,
+            requested: false,
+            available: true,
+            reviewState: null,
+          },
+        },
+        { member: "stranger", candidate: null },
+      ],
+    });
+  });
+
+  it("refuses a look-up whose members are not GitHub logins", async () => {
+    const github = createFakeGitHub([]);
+
+    expect(
+      await handleExtensionMessage(github.page, {
+        type: "look-up-group",
+        session: "popup-1",
+        members: ["a b"],
+      }),
+    ).toEqual({ ok: false, error: "The request did not carry a valid member list." });
+  });
+});
+
 describe("handleExtensionMessage counting open review requests", () => {
   const countMessage = (login: string) => ({ type: "count-open-requests", session: "popup-1", login });
 

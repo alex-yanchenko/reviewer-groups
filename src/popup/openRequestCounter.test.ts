@@ -104,13 +104,11 @@ describe("OpenRequestCounter", () => {
   });
 
   it("stops asking for the rest of the popup once GitHub limits searches", async () => {
-    const countInTab = vi
-      .fn<(login: string) => Promise<CountOpenRequestsReply>>()
-      .mockResolvedValueOnce({
-        ok: false,
-        error: "GitHub is limiting searches; counts paused.",
-        limited: true,
-      });
+    const countInTab = vi.fn<(login: string) => Promise<CountOpenRequestsReply>>().mockResolvedValueOnce({
+      ok: false,
+      error: "GitHub is limiting searches; counts paused.",
+      limited: true,
+    });
     const { counter } = buildCounter(countInTab);
 
     expect(await counter.count("ada-dev")).toBeNull();

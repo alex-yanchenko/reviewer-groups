@@ -100,6 +100,7 @@ export const describeOutcomeProblems = (outcome: ReviewRequestOutcome): string =
     listSentence("Not a reviewer option on this PR: ", outcome.notFound),
     listSentence("No longer on GitHub: ", outcome.gone, " Remove them from your groups."),
     listSentence("GitHub did not confirm: ", outcome.unconfirmed, " Check the pull request."),
+    listSentence("GitHub also removed: ", outcome.dropped, " Check the pull request."),
   ]);
 
 export const describeOutcome = (outcome: ReviewRequestOutcome): string =>
@@ -114,6 +115,7 @@ export const describeRemoval = (outcome: RemovalOutcome): string =>
     outcome.removed.length > 0 ? listSentence("Removed ", outcome.removed) : "Nobody was removed.",
     listSentence("No longer requested: ", outcome.notRequested),
     listSentence("GitHub did not confirm removing: ", outcome.unconfirmed, " Check the pull request."),
+    listSentence("GitHub also removed: ", outcome.dropped, " Check the pull request."),
   ]);
 
 export const describeReply = (reply: RequestReviewReply): string =>

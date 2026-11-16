@@ -32,6 +32,7 @@ export const outcome = (overrides: Partial<ReviewRequestOutcome>): ReviewRequest
   unavailable: [],
   notFound: [],
   unconfirmed: [],
+  dropped: [],
   gone: [],
   ...overrides,
 });
@@ -67,7 +68,10 @@ export interface RenderOptions {
 }
 
 const removingEveryone = (members: string[]): Promise<RemoveReviewersReply> =>
-  Promise.resolve({ ok: true, outcome: { removed: members, notRequested: [], unconfirmed: [] } });
+  Promise.resolve({
+    ok: true,
+    outcome: { removed: members, notRequested: [], unconfirmed: [], dropped: [] },
+  });
 
 const everyoneAvailable = (members: string[]): Promise<LookUpGroupReply> =>
   Promise.resolve({

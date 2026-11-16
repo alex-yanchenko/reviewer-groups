@@ -25,6 +25,7 @@ const outcome = (overrides: Partial<ReviewRequestOutcome>): ReviewRequestOutcome
   unavailable: [],
   notFound: [],
   unconfirmed: [],
+  dropped: [],
   gone: [],
   ...overrides,
 });

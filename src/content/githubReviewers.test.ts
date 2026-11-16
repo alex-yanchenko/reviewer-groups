@@ -47,6 +47,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     });
     expect(github.posts).toHaveLength(1);
@@ -106,6 +107,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     });
   });
@@ -132,6 +134,7 @@ describe("requestReviewFrom", () => {
       unavailable: ["away-person"],
       notFound: ["mon"],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     });
     expect(github.posts[0]?.getAll("reviewer_user_ids[]")).toEqual(["103", "102"]);
@@ -157,6 +160,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: ["outside-collaborator"],
       unconfirmed: [],
+      dropped: [],
       gone: ["renamed-person", "acme/old-team", "retired-app[bot]"],
     });
     expect(github.profileChecks).toEqual([
@@ -179,6 +183,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: ["stranger"],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     });
   });
@@ -195,6 +200,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: ["stranger"],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     });
     expect(github.posts).toEqual([]);
@@ -212,6 +218,7 @@ describe("requestReviewFrom", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: ["mona"],
+      dropped: [],
       gone: [],
     });
   });
@@ -462,7 +469,7 @@ describe("removeReviewersFrom", () => {
 
     const outcome = await removeReviewersFrom(github.page, ["Ada-Dev"]);
 
-    expect(outcome).toEqual({ removed: ["Ada-Dev"], notRequested: [], unconfirmed: [] });
+    expect(outcome).toEqual({ removed: ["Ada-Dev"], notRequested: [], unconfirmed: [], dropped: [] });
     expect(github.posts[0]?.getAll("reviewer_user_ids[]")).toEqual(["202"]);
     expect(github.posts[0]?.getAll("reviewer_team_ids[]")).toEqual(["900"]);
     expect(github.requestedLogins()).toEqual(["grace-ops", "acme/web"]);
@@ -474,7 +481,7 @@ describe("removeReviewersFrom", () => {
 
     const outcome = await removeReviewersFrom(github.page, ["linus-qa"]);
 
-    expect(outcome).toEqual({ removed: [], notRequested: ["linus-qa"], unconfirmed: [] });
+    expect(outcome).toEqual({ removed: [], notRequested: ["linus-qa"], unconfirmed: [], dropped: [] });
     expect(github.posts).toEqual([]);
   });
 
@@ -484,7 +491,7 @@ describe("removeReviewersFrom", () => {
 
     const outcome = await removeReviewersFrom(github.page, ["ada-dev"]);
 
-    expect(outcome).toEqual({ removed: [], notRequested: [], unconfirmed: ["ada-dev"] });
+    expect(outcome).toEqual({ removed: [], notRequested: [], unconfirmed: ["ada-dev"], dropped: [] });
   });
 
   it("refuses a removal while a request is still running in the same tab", async () => {
@@ -515,6 +522,7 @@ describe("a pull request tab without the Reviewers form", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     });
     expect(github.fetch).toHaveBeenCalledWith("http://localhost:3000/acme/widgets/pull/7", {
@@ -882,7 +890,7 @@ describe("a write never drops someone already requested", () => {
     expect(github.posts).toEqual([]);
   });
 
-  it("reports someone requested before and not requested afterwards as unconfirmed", async () => {
+  it("reports someone requested before and not requested afterwards as dropped by GitHub", async () => {
     mountPullRequestPage(document);
     const github = createFakeGitHub(
       [
@@ -899,12 +907,36 @@ describe("a write never drops someone already requested", () => {
       alreadyRequested: [],
       unavailable: [],
       notFound: [],
-      unconfirmed: ["octocat"],
+      unconfirmed: [],
+      dropped: ["octocat"],
       gone: [],
     });
   });
 
-  it("reports someone dropped by a removal of another person as unconfirmed", async () => {
+  it("keeps the people asked for apart from the people GitHub dropped", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(
+      [
+        { id: 101, login: "mona" },
+        { id: 103, login: "octocat", selected: true },
+      ],
+      { dropsOnPost: ["mona", "octocat"] },
+    );
+
+    const outcome = await requestReviewFrom(github.page, ["mona"]);
+
+    expect(outcome).toEqual({
+      added: [],
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: [],
+      unconfirmed: ["mona"],
+      dropped: ["octocat"],
+      gone: [],
+    });
+  });
+
+  it("reports someone dropped by a removal of another person as dropped by GitHub", async () => {
     mountPullRequestPage(document);
     const github = createFakeGitHub(
       [
@@ -916,7 +948,12 @@ describe("a write never drops someone already requested", () => {
 
     const outcome = await removeReviewersFrom(github.page, ["ada-dev"]);
 
-    expect(outcome).toEqual({ removed: ["ada-dev"], notRequested: [], unconfirmed: ["grace-ops"] });
+    expect(outcome).toEqual({
+      removed: ["ada-dev"],
+      notRequested: [],
+      unconfirmed: [],
+      dropped: ["grace-ops"],
+    });
   });
 });
 
@@ -953,6 +990,7 @@ describe("the read that confirms a write after GitHub accepted it", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: ["mona"],
+      dropped: [],
       gone: [],
     });
     expect(github.requestedLogins()).toEqual(["mona", "octocat"]);
@@ -965,7 +1003,7 @@ describe("the read that confirms a write after GitHub accepted it", () => {
 
     const outcome = await removeReviewersFrom(github.page, ["octocat"]);
 
-    expect(outcome).toEqual({ removed: [], notRequested: [], unconfirmed: ["octocat"] });
+    expect(outcome).toEqual({ removed: [], notRequested: [], unconfirmed: ["octocat"], dropped: [] });
   });
 
   it("confirms the readable people when a requested entry in the confirming answer cannot be read", async () => {
@@ -988,6 +1026,7 @@ describe("the read that confirms a write after GitHub accepted it", () => {
       unavailable: [],
       notFound: [],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     });
   });

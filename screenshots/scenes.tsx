@@ -82,6 +82,7 @@ const requestReview = (members: string[]): Promise<RequestReviewReply> =>
       unavailable: [],
       notFound: [],
       unconfirmed: [],
+      dropped: [],
       gone: [],
     },
   });
@@ -237,7 +238,10 @@ const renderScene = async (root: HTMLElement, scene: Scene, layout: "store" | "s
           }}
           openOptions={() => undefined}
           removeReviewers={(members) =>
-            Promise.resolve({ ok: true, outcome: { removed: members, notRequested: [], unconfirmed: [] } })
+            Promise.resolve({
+              ok: true,
+              outcome: { removed: members, notRequested: [], unconfirmed: [], dropped: [] },
+            })
           }
           openRequests={
             new OpenRequestCounter({

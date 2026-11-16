@@ -19,7 +19,7 @@ describe("App removing the people just requested", () => {
       .fn<(members: string[]) => Promise<RemoveReviewersReply>>()
       .mockResolvedValueOnce({
         ok: true,
-        outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [] },
+        outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [], dropped: [] },
       });
     renderApp({
       groups: [ops],
@@ -49,7 +49,7 @@ describe("App removing the people just requested", () => {
       .fn<(members: string[]) => Promise<RemoveReviewersReply>>()
       .mockResolvedValueOnce({
         ok: true,
-        outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [] },
+        outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [], dropped: [] },
       });
     const { recordAsked, restoreAsked } = renderApp({
       groups: [ops],

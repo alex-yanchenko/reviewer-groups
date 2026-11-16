@@ -36,6 +36,7 @@ export interface ReviewRequestOutcome {
   unavailable: string[];
   notFound: string[];
   unconfirmed: string[];
+  dropped: string[];
   gone: string[];
 }
 
@@ -292,6 +293,7 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
     unavailable: [],
     notFound: [],
     unconfirmed: [],
+    dropped: [],
     gone: [],
   };
   const toAdd: { member: string; entry: ReviewerEntry }[] = [];
@@ -311,7 +313,7 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
   for (const { member } of toAdd) {
     (isRequestedIn(confirmed, member) ? outcome.added : outcome.unconfirmed).push(member);
   }
-  outcome.unconfirmed.push(...droppedAccordingTo(before, confirmed));
+  outcome.dropped.push(...droppedAccordingTo(before, confirmed));
   return outcome;
 };
 
@@ -336,6 +338,7 @@ export interface RemovalOutcome {
   removed: string[];
   notRequested: string[];
   unconfirmed: string[];
+  dropped: string[];
 }
 
 const removeRequestedMembers = async (page: GitHubPage, members: readonly string[]) => {
@@ -348,6 +351,7 @@ const removeRequestedMembers = async (page: GitHubPage, members: readonly string
     removed: [],
     notRequested: members.filter((member) => !isRequested(current, member)),
     unconfirmed: [],
+    dropped: [],
   };
   const toRemove = members.filter((member) => isRequested(current, member));
   if (toRemove.length === 0) return outcome;
@@ -358,7 +362,7 @@ const removeRequestedMembers = async (page: GitHubPage, members: readonly string
     const confirmedRemoved = confirmed?.complete === true && !isRequestedIn(confirmed, member);
     (confirmedRemoved ? outcome.removed : outcome.unconfirmed).push(member);
   }
-  outcome.unconfirmed.push(...droppedAccordingTo(kept, confirmed));
+  outcome.dropped.push(...droppedAccordingTo(kept, confirmed));
   return outcome;
 };
 

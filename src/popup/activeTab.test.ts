@@ -15,6 +15,7 @@ const emptyOutcome = {
   unavailable: [],
   notFound: [],
   unconfirmed: [],
+  dropped: [],
   gone: [],
 };
 
@@ -42,7 +43,10 @@ describe("describePullRequest", () => {
 
 describe("parseReply", () => {
   it("accepts a successful reply from the page", () => {
-    const reply = { ok: true, outcome: { ...emptyOutcome, added: ["mona"], unconfirmed: ["hubot"] } };
+    const reply = {
+      ok: true,
+      outcome: { ...emptyOutcome, added: ["mona"], unconfirmed: ["hubot"], dropped: ["linus-qa"] },
+    };
 
     expect(parseReply(reply)).toEqual(reply);
   });
@@ -179,7 +183,7 @@ describe("parseRemoveReply", () => {
   it("accepts who the page removed", () => {
     const reply = {
       ok: true,
-      outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [] },
+      outcome: { removed: ["ada-dev"], notRequested: ["grace-ops"], unconfirmed: [], dropped: [] },
     };
 
     expect(parseRemoveReply(reply)).toEqual(reply);

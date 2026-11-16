@@ -27,6 +27,7 @@ describe("handleExtensionMessage", () => {
         unavailable: [],
         notFound: [],
         unconfirmed: [],
+        dropped: [],
         gone: [],
       },
     });
@@ -223,7 +224,7 @@ describe("handleExtensionMessage removing reviewers", () => {
 
     expect(await handleExtensionMessage(github.page, removeMessage("acme/widgets#7"))).toEqual({
       ok: true,
-      outcome: { removed: ["ada-dev"], notRequested: [], unconfirmed: [] },
+      outcome: { removed: ["ada-dev"], notRequested: [], unconfirmed: [], dropped: [] },
     });
   });
 

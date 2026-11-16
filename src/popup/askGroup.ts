@@ -44,6 +44,7 @@ const emptyOutcome = (): ReviewRequestOutcome => ({
   unavailable: [],
   notFound: [],
   unconfirmed: [],
+  dropped: [],
   gone: [],
 });
 
@@ -94,6 +95,7 @@ const recordBatch = (batch: RankedCandidate[], outcome: ReviewRequestOutcome, as
   ask.problems.unavailable.push(...outcome.unavailable);
   ask.problems.notFound.push(...outcome.notFound);
   ask.problems.unconfirmed.push(...outcome.unconfirmed);
+  ask.problems.dropped.push(...outcome.dropped);
   ask.problems.gone.push(...outcome.gone);
 };
 

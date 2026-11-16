@@ -99,7 +99,10 @@ const recordBatch = (batch: RankedCandidate[], outcome: ReviewRequestOutcome, as
   ask.problems.gone.push(...outcome.gone);
 };
 
-const stillWanted = (ask: AskOutcome) => ask.wanted - ask.picked.length - ask.alreadyRequested.length;
+const askedSoFar = (ask: AskOutcome) =>
+  ask.picked.length + ask.alreadyRequested.length + ask.problems.unconfirmed.length;
+
+const stillWanted = (ask: AskOutcome) => ask.wanted - askedSoFar(ask);
 
 export const askGroup = async (group: Group, dependencies: AskDependencies): Promise<AskReply> => {
   const lookup = await dependencies.lookUp(group.members);
@@ -126,7 +129,7 @@ const describePick = ({ login, openRequests }: PickedReviewer) =>
   `${login} (${openRequests === null ? "count unknown" : `${openRequests} open`})`;
 
 export const describeAsk = (groupName: string, ask: AskOutcome): string => {
-  const asked = ask.picked.length + ask.alreadyRequested.length;
+  const asked = askedSoFar(ask);
   return joinSentences([
     ask.picked.length > 0
       ? `Picked ${ask.picked.map(describePick).join(", ")} from ${groupName}.`

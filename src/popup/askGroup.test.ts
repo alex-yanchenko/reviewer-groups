@@ -190,12 +190,41 @@ describe("askGroup", () => {
     expect(run.count).toHaveBeenCalledTimes(1);
   });
 
-  it("asks the next candidates when GitHub does not confirm a pick", async () => {
+  it("counts a pick GitHub did not confirm toward the number and asks nobody else", async () => {
+    const request = vi.fn<(members: string[]) => Promise<RequestReviewReply>>().mockResolvedValueOnce({
+      ok: true,
+      outcome: outcome({ added: ["linus-qa"], unconfirmed: ["grace-ops"] }),
+    });
+    const run = runAsk({
+      ask: 2,
+      candidates: [person("ada-dev"), person("grace-ops"), person("linus-qa")],
+      counts: { "ada-dev": 2, "grace-ops": 1, "linus-qa": 0 },
+      request,
+    });
+
+    expect(await run.reply).toEqual({
+      ok: true,
+      ask: {
+        wanted: 2,
+        picked: [{ login: "linus-qa", openRequests: 0 }],
+        alreadyRequested: [],
+        problems: outcome({ unconfirmed: ["grace-ops"] }),
+      },
+    });
+    expect(request.mock.calls).toEqual([[["linus-qa", "grace-ops"]]]);
+  });
+
+  it("asks the next candidate when a pick is not found, unavailable or gone", async () => {
     const request = vi
       .fn<(members: string[]) => Promise<RequestReviewReply>>()
       .mockResolvedValueOnce({
         ok: true,
-        outcome: outcome({ added: ["linus-qa"], unconfirmed: ["grace-ops"] }),
+        outcome: outcome({
+          added: ["linus-qa"],
+          notFound: ["grace-ops"],
+          unavailable: ["joan-ux"],
+          gone: ["mona-dev"],
+        }),
       })
       .mockResolvedValueOnce({ ok: true, outcome: outcome({ added: ["ada-dev"] }) });
     const run = runAsk({
@@ -214,7 +243,7 @@ describe("askGroup", () => {
           { login: "ada-dev", openRequests: 2 },
         ],
         alreadyRequested: [],
-        problems: outcome({ unconfirmed: ["grace-ops"] }),
+        problems: outcome({ notFound: ["grace-ops"], unavailable: ["joan-ux"], gone: ["mona-dev"] }),
       },
     });
     expect(request.mock.calls).toEqual([[["linus-qa", "grace-ops"]], [["ada-dev"]]]);
@@ -225,7 +254,7 @@ describe("askGroup", () => {
       .fn<(members: string[]) => Promise<RequestReviewReply>>()
       .mockResolvedValueOnce({
         ok: true,
-        outcome: outcome({ added: ["linus-qa"], unconfirmed: ["grace-ops"] }),
+        outcome: outcome({ added: ["linus-qa"], notFound: ["grace-ops"] }),
       })
       .mockResolvedValueOnce({ ok: false, error: "GitHub answered 422." });
     const run = runAsk({

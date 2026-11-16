@@ -81,15 +81,18 @@ const readEntry = (raw: unknown): ReviewerEntry[] => {
 const isUnreadableRequestedEntry = (raw: unknown): boolean =>
   claimsToBeRequestedSchema.safeParse(raw).success && !reviewerEntrySchema.safeParse(raw).success;
 
-const readEntries = (answer: unknown, requestedMustBeReadable: boolean): ReviewerEntry[] => {
+interface ReadEntries {
+  entries: ReviewerEntry[];
+  requestedUnreadable: boolean;
+}
+
+const readEntries = (answer: unknown): ReadEntries => {
   const parsed = reviewerAnswerSchema.safeParse(answer);
   if (!parsed.success) throw new GitHubAnswerUnreadableError();
   const raw = [...(parsed.data.suggestions ?? []), ...(parsed.data.users ?? [])];
   const entries = raw.flatMap(readEntry);
   if (raw.length > 0 && entries.length === 0) throw new GitHubAnswerUnreadableError();
-  if (requestedMustBeReadable && raw.some(isUnreadableRequestedEntry))
-    throw new GitHubAnswerUnreadableError();
-  return entries;
+  return { entries, requestedUnreadable: raw.some(isUnreadableRequestedEntry) };
 };
 
 const readJsonOrAskToSignIn = async (response: Response): Promise<unknown> => {
@@ -100,12 +103,11 @@ const readJsonOrAskToSignIn = async (response: Response): Promise<unknown> => {
   }
 };
 
-const searchReviewers = async (
+const fetchEntries = async (
   { doc, fetch }: GitHubPage,
   query: string,
-  path = pullRequestPath(doc),
-  requestedMustBeReadable = false,
-): Promise<ReviewerEntry[]> => {
+  path: string,
+): Promise<ReadEntries> => {
   const url = pullRequestUrl(doc, "/review-requests", path);
   url.searchParams.set("typeAhead", "true");
   url.searchParams.set("q", query);
@@ -115,7 +117,18 @@ const searchReviewers = async (
   });
   if (landedOnLoginPage(response)) throw new NotSignedInError();
   if (!response.ok) throw new GitHubAnswerError(response.status);
-  return readEntries(await readJsonOrAskToSignIn(response), requestedMustBeReadable);
+  return readEntries(await readJsonOrAskToSignIn(response));
+};
+
+const searchReviewers = async (
+  page: GitHubPage,
+  query: string,
+  path = pullRequestPath(page.doc),
+  requestedMustBeReadable = false,
+): Promise<ReviewerEntry[]> => {
+  const { entries, requestedUnreadable } = await fetchEntries(page, query, path);
+  if (requestedMustBeReadable && requestedUnreadable) throw new GitHubAnswerUnreadableError();
+  return entries;
 };
 
 const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -222,6 +235,26 @@ const sendReviewers = async (page: GitHubPage, reviewers: ReviewerEntry[], path:
 const currentlyRequested = async (page: GitHubPage, path: string) =>
   (await searchReviewers(page, "", path, true)).filter((entry) => entry.selected);
 
+interface ConfirmedRequests {
+  requested: ReviewerEntry[];
+  complete: boolean;
+}
+
+const confirmedRequests = async (page: GitHubPage, path: string): Promise<ConfirmedRequests | null> => {
+  try {
+    const { entries, requestedUnreadable } = await fetchEntries(page, "", path);
+    return { requested: entries.filter((entry) => entry.selected), complete: !requestedUnreadable };
+  } catch {
+    return null;
+  }
+};
+
+const isRequestedIn = (confirmed: ConfirmedRequests | null, member: string): boolean =>
+  confirmed?.requested.some((entry) => sameLogin(entry.login, member)) ?? false;
+
+const droppedAccordingTo = (before: ReviewerEntry[], confirmed: ConfirmedRequests | null): string[] =>
+  confirmed?.complete ? droppedBy(before, confirmed.requested) : [];
+
 const droppedBy = (before: ReviewerEntry[], after: ReviewerEntry[]): string[] =>
   before
     .filter((entry) => !after.some((remaining) => sameLogin(remaining.login, entry.login)))
@@ -274,12 +307,11 @@ const requestLookedUpMembers = async (page: GitHubPage, members: readonly string
   if (toAdd.length === 0) return outcome;
   const before = await currentlyRequested(page, path);
   await sendReviewers(page, [...before, ...toAdd.map(({ entry }) => entry)], path);
-  const confirmed = await currentlyRequested(page, path);
+  const confirmed = await confirmedRequests(page, path);
   for (const { member } of toAdd) {
-    const isRequested = confirmed.some((entry) => sameLogin(entry.login, member));
-    (isRequested ? outcome.added : outcome.unconfirmed).push(member);
+    (isRequestedIn(confirmed, member) ? outcome.added : outcome.unconfirmed).push(member);
   }
-  outcome.unconfirmed.push(...droppedBy(before, confirmed));
+  outcome.unconfirmed.push(...droppedAccordingTo(before, confirmed));
   return outcome;
 };
 
@@ -321,11 +353,12 @@ const removeRequestedMembers = async (page: GitHubPage, members: readonly string
   if (toRemove.length === 0) return outcome;
   const kept = current.filter((entry) => !members.some((member) => sameLogin(member, entry.login)));
   await sendReviewers(page, kept, path);
-  const confirmed = await currentlyRequested(page, path);
+  const confirmed = await confirmedRequests(page, path);
   for (const member of toRemove) {
-    (isRequested(confirmed, member) ? outcome.unconfirmed : outcome.removed).push(member);
+    const confirmedRemoved = confirmed?.complete === true && !isRequestedIn(confirmed, member);
+    (confirmedRemoved ? outcome.removed : outcome.unconfirmed).push(member);
   }
-  outcome.unconfirmed.push(...droppedBy(kept, confirmed));
+  outcome.unconfirmed.push(...droppedAccordingTo(kept, confirmed));
   return outcome;
 };
 

@@ -919,3 +919,76 @@ describe("a write never drops someone already requested", () => {
     expect(outcome).toEqual({ removed: ["ada-dev"], notRequested: [], unconfirmed: ["grace-ops"] });
   });
 });
+
+describe("the read that confirms a write after GitHub accepted it", () => {
+  const answerTypeaheadAfterPost = (
+    github: ReturnType<typeof createFakeGitHub>,
+    answer: () => Response | Promise<Response>,
+  ) => {
+    const original = github.fetch.getMockImplementation();
+    if (original === undefined) throw new Error("the fake fetch has no implementation");
+    let posted = false;
+    github.fetch.mockImplementation((input, init) => {
+      if (init?.method === "POST") posted = true;
+      const isTypeahead = String(input instanceof Request ? input.url : input).includes("typeAhead=true");
+      return posted && isTypeahead ? Promise.resolve(answer()) : original(input, init);
+    });
+  };
+
+  const twoPeople = (): FakePerson[] => [
+    { id: 101, login: "mona" },
+    { id: 103, login: "octocat", selected: true },
+  ];
+
+  it("reports the people asked for as unconfirmed when the confirming answer is not JSON", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(twoPeople());
+    answerTypeaheadAfterPost(github, () => new Response("<html><body>unicorn</body></html>"));
+
+    const outcome = await requestReviewFrom(github.page, ["mona"]);
+
+    expect(outcome).toEqual({
+      added: [],
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: [],
+      unconfirmed: ["mona"],
+      gone: [],
+    });
+    expect(github.requestedLogins()).toEqual(["mona", "octocat"]);
+  });
+
+  it("reports a removal as unconfirmed when the confirming read fails", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(twoPeople());
+    answerTypeaheadAfterPost(github, () => new Response("", { status: 502 }));
+
+    const outcome = await removeReviewersFrom(github.page, ["octocat"]);
+
+    expect(outcome).toEqual({ removed: [], notRequested: [], unconfirmed: ["octocat"] });
+  });
+
+  it("confirms the readable people when a requested entry in the confirming answer cannot be read", async () => {
+    mountPullRequestPage(document);
+    const github = createFakeGitHub(twoPeople());
+    answerTypeaheadAfterPost(github, () =>
+      Response.json({
+        users: [
+          { id: 101, type: "user", login: "mona", selected: true },
+          { id: 103, type: "user", login: "octocat", selected: true, avatar: 42 },
+        ],
+      }),
+    );
+
+    const outcome = await requestReviewFrom(github.page, ["mona"]);
+
+    expect(outcome).toEqual({
+      added: ["mona"],
+      alreadyRequested: [],
+      unavailable: [],
+      notFound: [],
+      unconfirmed: [],
+      gone: [],
+    });
+  });
+});

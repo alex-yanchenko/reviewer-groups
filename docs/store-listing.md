@@ -34,7 +34,7 @@ Save a set of people you ask often as a group. Next time it is two clicks: the t
 
 **Small promo tile** (440×280): `docs/screenshots/promo.png`
 
-**Store icon** (128×128): `icons/icon-128.png`
+**Store icon** (128×128): `public/icons/icon-128.png`
 
 ## Privacy practices
 

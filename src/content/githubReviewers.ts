@@ -1,4 +1,12 @@
 import * as z from "zod/mini";
+import type {
+  GroupLookup,
+  RemovalOutcome,
+  ReviewerCandidate,
+  ReviewerList,
+  ReviewRequestOutcome,
+  ReviewState,
+} from "../messages";
 import {
   landedOnLoginPage,
   NotSignedInError,
@@ -11,35 +19,14 @@ import {
   readReviewStates,
   showFreshSidebar,
   showsSignInForm,
-  type ReviewState,
 } from "./conversationPage";
 import { GitHubAnswerError, type GitHubPage } from "./githubPage";
 
 export { GitHubAnswerError };
-export type { GitHubPage, ReviewState };
+export type { GitHubPage };
 
 const USER_FIELD = "reviewer_user_ids[]";
 const TEAM_FIELD = "reviewer_team_ids[]";
-
-export interface ReviewerCandidate {
-  login: string;
-  description: string;
-  avatarUrl: string | null;
-  team: boolean;
-  requested: boolean;
-  available: boolean;
-  reviewState: ReviewState | null;
-}
-
-export interface ReviewRequestOutcome {
-  added: string[];
-  alreadyRequested: string[];
-  unavailable: string[];
-  notFound: string[];
-  unconfirmed: string[];
-  dropped: string[];
-  gone: string[];
-}
 
 export class GitHubAnswerUnreadableError extends Error {
   override readonly name = "GitHubAnswerUnreadableError";
@@ -159,17 +146,6 @@ export const searchReviewerCandidates = async (
   return entries.map((entry) => describeEntry(entry, reviewStates));
 };
 
-export interface ReviewedPerson {
-  login: string;
-  reviewState: ReviewState;
-  requested: boolean;
-}
-
-export interface ReviewerList {
-  candidates: ReviewerCandidate[];
-  reviewed: ReviewedPerson[];
-}
-
 export const listReviewers = async (page: GitHubPage, query: string): Promise<ReviewerList> => {
   const path = pullRequestPath(page.doc);
   const candidates = await searchReviewerCandidates(page, query, path);
@@ -188,16 +164,6 @@ const lookUpMember = async (page: GitHubPage, member: string, path = pullRequest
   member,
   entry: (await searchReviewers(page, member, path)).find((entry) => sameLogin(entry.login, member)),
 });
-
-export interface MemberLookup {
-  member: string;
-  candidate: ReviewerCandidate | null;
-}
-
-export interface GroupLookup {
-  members: MemberLookup[];
-  author: string | null;
-}
 
 export const lookUpGroup = async (page: GitHubPage, members: readonly string[]): Promise<GroupLookup> => {
   const path = pullRequestPath(page.doc);
@@ -337,13 +303,6 @@ export const requestReviewFrom = (
   page: GitHubPage,
   members: readonly string[],
 ): Promise<ReviewRequestOutcome> => withWriteLock(() => requestLookedUpMembers(page, members));
-
-export interface RemovalOutcome {
-  removed: string[];
-  notRequested: string[];
-  unconfirmed: string[];
-  dropped: string[];
-}
 
 const removeRequestedMembers = async (page: GitHubPage, members: readonly string[]) => {
   const path = pullRequestPath(page.doc);

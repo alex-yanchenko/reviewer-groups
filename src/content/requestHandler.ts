@@ -15,6 +15,7 @@ import {
   type RemoveReviewersReply,
   type RequestReviewReply,
 } from "../messages";
+import { PageCouldNotFinishError, pageMessenger, type PageProtocol } from "../pageMessenger";
 import {
   ConversationPageUnreadableError,
   isShowingPullRequest,
@@ -35,17 +36,6 @@ import {
 } from "./githubReviewers";
 import { countOpenReviewRequests, SearchAnswerUnreadableError, SearchLimitedError } from "./openRequests";
 
-type ExtensionReply =
-  RequestReviewReply | ListReviewersReply | CountOpenRequestsReply | LookUpGroupReply | RemoveReviewersReply;
-
-const EXTENSION_MESSAGE_TYPES: ReadonlySet<unknown> = new Set([
-  REQUEST_REVIEW,
-  LIST_REVIEWERS,
-  COUNT_OPEN_REQUESTS,
-  LOOK_UP_GROUP,
-  REMOVE_REVIEWERS,
-]);
-
 const EXPECTED_FAILURES = [
   ConversationPageUnreadableError,
   GitHubAnswerError,
@@ -58,12 +48,6 @@ const EXPECTED_FAILURES = [
   SearchAnswerUnreadableError,
   SearchLimitedError,
 ];
-
-export const isExtensionMessage = (message: unknown): message is { type: string } =>
-  typeof message === "object" &&
-  message !== null &&
-  "type" in message &&
-  EXTENSION_MESSAGE_TYPES.has(message.type);
 
 const replyWithExpectedFailure = (error: unknown): { ok: false; error: string } => {
   if (EXPECTED_FAILURES.some((failure) => error instanceof failure)) {
@@ -148,7 +132,12 @@ const handleRemoveReviewers = (page: GitHubPage, message: unknown): Promise<Remo
   );
 };
 
-const HANDLERS: Record<string, (page: GitHubPage, message: unknown) => Promise<ExtensionReply>> = {
+export const pageHandlers: {
+  [Type in keyof PageProtocol]: (
+    page: GitHubPage,
+    message: unknown,
+  ) => Promise<ReturnType<PageProtocol[Type]>>;
+} = {
   [REQUEST_REVIEW]: handleRequestReview,
   [LIST_REVIEWERS]: handleListReviewers,
   [COUNT_OPEN_REQUESTS]: handleCountOpenRequests,
@@ -156,10 +145,17 @@ const HANDLERS: Record<string, (page: GitHubPage, message: unknown) => Promise<E
   [REMOVE_REVIEWERS]: handleRemoveReviewers,
 };
 
-export const handleExtensionMessage = async (
-  page: GitHubPage,
-  message: unknown,
-): Promise<ExtensionReply | undefined> => {
-  if (!isExtensionMessage(message)) return undefined;
-  return HANDLERS[message.type]?.(page, message);
+const answerFor =
+  <Reply>(page: GitHubPage, handle: (page: GitHubPage, message: unknown) => Promise<Reply>) =>
+  ({ data }: { data: unknown }): Promise<Reply> =>
+    handle(page, data).catch((error: unknown) => {
+      throw new PageCouldNotFinishError(error);
+    });
+
+export const listenToPopup = (page: GitHubPage): void => {
+  pageMessenger.onMessage(REQUEST_REVIEW, answerFor(page, pageHandlers[REQUEST_REVIEW]));
+  pageMessenger.onMessage(LIST_REVIEWERS, answerFor(page, pageHandlers[LIST_REVIEWERS]));
+  pageMessenger.onMessage(COUNT_OPEN_REQUESTS, answerFor(page, pageHandlers[COUNT_OPEN_REQUESTS]));
+  pageMessenger.onMessage(LOOK_UP_GROUP, answerFor(page, pageHandlers[LOOK_UP_GROUP]));
+  pageMessenger.onMessage(REMOVE_REVIEWERS, answerFor(page, pageHandlers[REMOVE_REVIEWERS]));
 };

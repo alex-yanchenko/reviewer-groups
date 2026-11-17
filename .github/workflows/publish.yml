@@ -33,24 +33,32 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Check that the tag matches the manifest version
+      - name: Check that the tag matches the package version
         run: |
-          version=$(jq -r .version manifest.json)
+          version=$(jq -r .version package.json)
           if [ "v$version" != "$TAG" ]; then
-            echo "::error::manifest.json says $version but the release tag is $TAG."
+            echo "::error::package.json says $version but the release tag is $TAG."
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "PACKAGE=.output/reviewer-groups-$version.zip" >> "$GITHUB_ENV"
       - run: pnpm check
       - run: pnpm package
+      - name: Check that the built manifest carries the package version
+        run: |
+          built=$(unzip -p "$PACKAGE" manifest.json | jq -r .version)
+          if [ "$built" != "$VERSION" ]; then
+            echo "::error::The built manifest says $built but package.json says $VERSION."
+            exit 1
+          fi
       - name: Attach the package to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" "reviewer-groups-$VERSION.zip" --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" "$PACKAGE" --clobber --repo "$GITHUB_REPOSITORY"
       - name: Upload to the Chrome Web Store and submit for review
         env:
           EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
-          PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
           CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
@@ -61,4 +69,4 @@ jobs:
               exit 1
             fi
           done
-          npx --yes --package chrome-webstore-upload-cli@4.0.2 chrome-webstore-upload --source "reviewer-groups-$VERSION.zip"
+          npx --yes --package chrome-webstore-upload-cli@4.0.2 chrome-webstore-upload --source "$PACKAGE"

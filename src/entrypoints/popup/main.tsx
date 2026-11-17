@@ -1,11 +1,12 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
-import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
+import { loadGroups, saveGroups, type StorageArea } from "../../groups/storage";
 import type {
   ListReviewersReply,
   LookUpGroupReply,
   RemoveReviewersReply,
   RequestReviewReply,
-} from "../messages";
+} from "../../messages";
 import {
   countOpenRequestsInTab,
   listReviewersInTab,
@@ -13,17 +14,18 @@ import {
   readActiveTab,
   removeReviewersInTab,
   requestReviewInTab,
-} from "./activeTab";
-import { App, type DirectoryStore, type DraftStore, type GroupStore } from "./App";
-import { loadDirectory, saveDirectory } from "./directory";
-import { loadDraft, saveDraft } from "./draft";
-import { OpenRequestCounter } from "./openRequestCounter";
-import { rotationStore } from "./rotation";
-import "./popup.css";
+} from "../../popup/activeTab";
+import { App, type DirectoryStore, type DraftStore, type GroupStore } from "../../popup/App";
+import { loadDirectory, saveDirectory } from "../../popup/directory";
+import { loadDraft, saveDraft } from "../../popup/draft";
+import { OpenRequestCounter } from "../../popup/openRequestCounter";
+import { createPopupQueryClient } from "../../popup/queryClient";
+import { rotationStore } from "../../popup/rotation";
+import { directoryItem, draftItem, lastAskedItem } from "../../popup/storedItems";
+import "../../popup/popup.css";
 
 const syncArea: StorageArea = chrome.storage.sync;
 const sessionArea: StorageArea = chrome.storage.session;
-const localArea: StorageArea = chrome.storage.local;
 
 const store: GroupStore = {
   load: () => loadGroups(syncArea),
@@ -31,13 +33,13 @@ const store: GroupStore = {
 };
 
 const drafts: DraftStore = {
-  load: () => loadDraft(sessionArea),
-  save: (draft) => saveDraft(sessionArea, draft),
+  load: () => loadDraft(draftItem),
+  save: (draft) => saveDraft(draftItem, draft),
 };
 
 const directory: DirectoryStore = {
-  load: () => loadDirectory(localArea),
-  save: (people) => saveDirectory(localArea, people),
+  load: () => loadDirectory(directoryItem),
+  save: (people) => saveDirectory(directoryItem, people),
 };
 
 const NO_TAB = { ok: false, error: "No active tab." } as const;
@@ -60,28 +62,32 @@ const mount = async () => {
     popupTab === null || pullRequest === null
       ? Promise.resolve(NO_TAB)
       : removeReviewersInTab(popupTab, pullRequest, members);
+  const queryClient = createPopupQueryClient();
   const openRequests = new OpenRequestCounter({
     countInTab: (login) =>
       popupTab === null
         ? Promise.resolve({ ...NO_TAB, limited: false })
         : countOpenRequestsInTab(popupTab, login),
     area: sessionArea,
+    queryClient,
   });
   createRoot(container).render(
-    <App
-      store={store}
-      drafts={drafts}
-      directory={directory}
-      newId={() => crypto.randomUUID()}
-      pullRequest={pullRequest}
-      requestReview={requestReview}
-      listReviewers={listReviewers}
-      lookUpGroup={lookUpGroup}
-      openRequests={openRequests}
-      rotation={rotationStore(localArea)}
-      openOptions={() => void chrome.runtime.openOptionsPage()}
-      removeReviewers={removeReviewers}
-    />,
+    <QueryClientProvider client={queryClient}>
+      <App
+        store={store}
+        drafts={drafts}
+        directory={directory}
+        newId={() => crypto.randomUUID()}
+        pullRequest={pullRequest}
+        requestReview={requestReview}
+        listReviewers={listReviewers}
+        lookUpGroup={lookUpGroup}
+        openRequests={openRequests}
+        rotation={rotationStore(lastAskedItem)}
+        openOptions={() => void chrome.runtime.openOptionsPage()}
+        removeReviewers={removeReviewers}
+      />
+    </QueryClientProvider>,
   );
 };
 

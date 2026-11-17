@@ -7,9 +7,9 @@
   "license": "MIT",
   "packageManager": "pnpm@11.5.1",
   "scripts": {
-    "build": "node build.mjs",
-    "dev": "node build.mjs --watch",
-    "package": "node build.mjs --zip",
+    "build": "wxt build",
+    "dev": "wxt",
+    "package": "wxt zip",
     "screenshots": "node screenshots/capture.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -19,6 +19,10 @@
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.107.1",
+    "@webext-core/messaging": "^4.0.1",
+    "@wxt-dev/storage": "^1.3.0",
+    "p-queue": "^9.3.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7"
@@ -38,6 +42,9 @@
     "prettier": "^3.10.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
-    "vitest": "^5.1.0"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "web-ext": "^10.8.0",
+    "wxt": "^0.21.5"
   }
 }

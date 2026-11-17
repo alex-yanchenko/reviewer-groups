@@ -1,9 +1,9 @@
 import { createRoot } from "react-dom/client";
-import { loadGroups, saveGroups, type StorageArea } from "../groups/storage";
-import type { GroupStore } from "../popup/App";
-import "../popup/popup.css";
-import "./options.css";
-import { Options } from "./Options";
+import { loadGroups, saveGroups, type StorageArea } from "../../groups/storage";
+import { Options } from "../../options/Options";
+import type { GroupStore } from "../../popup/App";
+import "../../popup/popup.css";
+import "../../options/options.css";
 
 const syncArea: StorageArea = chrome.storage.sync;
 

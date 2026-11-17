@@ -1,38 +1,18 @@
 import * as z from "zod/mini";
-import type {
-  GroupLookup,
-  MemberLookup,
-  RemovalOutcome,
-  ReviewedPerson,
-  ReviewerCandidate,
-  ReviewerList,
-  ReviewRequestOutcome,
-  ReviewState,
-} from "./content/githubReviewers";
 import { isPersonLogin, memberSchema } from "./groups/group";
-
-export type {
-  GroupLookup,
-  MemberLookup,
-  RemovalOutcome,
-  ReviewedPerson,
-  ReviewerCandidate,
-  ReviewerList,
-  ReviewRequestOutcome,
-  ReviewState,
-};
+import { trustedAvatarUrl } from "./popup/avatar";
 
 export const REQUEST_REVIEW = "request-review";
 export const LIST_REVIEWERS = "list-reviewers";
-
-export type ListReviewersReply = ({ ok: true } & ReviewerList) | { ok: false; error: string };
+export const COUNT_OPEN_REQUESTS = "count-open-requests";
+export const LOOK_UP_GROUP = "look-up-group";
+export const REMOVE_REVIEWERS = "remove-reviewers";
 
 const popupSessionSchema = z.string().check(z.minLength(1), z.maxLength(100));
 
 const pullRequestReferenceSchema = z.string().check(z.regex(/^[^/\s#]+\/[^/\s#]+#\d+$/));
 
 export const requestReviewMessageSchema = z.object({
-  type: z.literal(REQUEST_REVIEW),
   session: popupSessionSchema,
   pullRequest: pullRequestReferenceSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
@@ -41,42 +21,27 @@ export const requestReviewMessageSchema = z.object({
 export type RequestReviewMessage = z.infer<typeof requestReviewMessageSchema>;
 
 export const listReviewersMessageSchema = z.object({
-  type: z.literal(LIST_REVIEWERS),
   session: popupSessionSchema,
   query: z.string().check(z.maxLength(100)),
 });
 
 export type ListReviewersMessage = z.infer<typeof listReviewersMessageSchema>;
 
-export const COUNT_OPEN_REQUESTS = "count-open-requests";
-
 export const countOpenRequestsMessageSchema = z.object({
-  type: z.literal(COUNT_OPEN_REQUESTS),
   session: popupSessionSchema,
   login: memberSchema.check(z.refine(isPersonLogin)),
 });
 
 export type CountOpenRequestsMessage = z.infer<typeof countOpenRequestsMessageSchema>;
 
-export type CountOpenRequestsReply =
-  { ok: true; count: number } | { ok: false; error: string; limited: boolean };
-
-export const LOOK_UP_GROUP = "look-up-group";
-
 export const lookUpGroupMessageSchema = z.object({
-  type: z.literal(LOOK_UP_GROUP),
   session: popupSessionSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
 });
 
 export type LookUpGroupMessage = z.infer<typeof lookUpGroupMessageSchema>;
 
-export type LookUpGroupReply = ({ ok: true } & GroupLookup) | { ok: false; error: string };
-
-export const REMOVE_REVIEWERS = "remove-reviewers";
-
 export const removeReviewersMessageSchema = z.object({
-  type: z.literal(REMOVE_REVIEWERS),
   session: popupSessionSchema,
   pullRequest: pullRequestReferenceSchema,
   members: z.array(memberSchema).check(z.minLength(1)),
@@ -84,9 +49,128 @@ export const removeReviewersMessageSchema = z.object({
 
 export type RemoveReviewersMessage = z.infer<typeof removeReviewersMessageSchema>;
 
-export type RemoveReviewersReply = { ok: true; outcome: RemovalOutcome } | { ok: false; error: string };
+const reviewStateSchema = z.enum(["approved", "changesRequested", "commented"]);
 
-export type RequestReviewReply = { ok: true; outcome: ReviewRequestOutcome } | { ok: false; error: string };
+export type ReviewState = z.infer<typeof reviewStateSchema>;
+
+const avatarFromGitHubSchema = z.pipe(z.nullable(z.string()), z.transform(trustedAvatarUrl));
+
+const reviewerCandidateSchema = z.object({
+  login: memberSchema,
+  description: z.string(),
+  avatarUrl: avatarFromGitHubSchema,
+  team: z.boolean(),
+  requested: z.boolean(),
+  available: z.boolean(),
+  reviewState: z.nullable(reviewStateSchema),
+});
+
+export type ReviewerCandidate = z.infer<typeof reviewerCandidateSchema>;
+
+const reviewedPersonSchema = z.object({
+  login: memberSchema,
+  reviewState: reviewStateSchema,
+  requested: z.boolean(),
+});
+
+export type ReviewedPerson = z.infer<typeof reviewedPersonSchema>;
+
+const readableEntries =
+  <Entry>(entry: z.ZodMiniType<Entry>) =>
+  (raw: unknown[]): Entry[] =>
+    raw.flatMap((item) => {
+      const result = entry.safeParse(item);
+      return result.success ? [result.data] : [];
+    });
+
+const someReadable =
+  (entry: z.ZodMiniType) =>
+  (raw: unknown[]): boolean =>
+    raw.length === 0 || raw.some((item) => entry.safeParse(item).success);
+
+const reviewerListSchema = z.object({
+  candidates: z.pipe(
+    z.array(z.unknown()).check(z.refine(someReadable(reviewerCandidateSchema))),
+    z.transform(readableEntries(reviewerCandidateSchema)),
+  ),
+  reviewed: z._default(z.pipe(z.array(z.unknown()), z.transform(readableEntries(reviewedPersonSchema))), []),
+});
+
+export type ReviewerList = z.infer<typeof reviewerListSchema>;
+
+const memberLookupSchema = z.object({
+  member: memberSchema,
+  candidate: z.nullable(reviewerCandidateSchema),
+});
+
+const groupLookupSchema = z.object({
+  author: z.nullable(z.string()),
+  members: z.array(memberLookupSchema),
+});
+
+export type GroupLookup = z.infer<typeof groupLookupSchema>;
+
+const loginsSchema = z.array(z.string());
+
+const reviewRequestOutcomeSchema = z.object({
+  added: loginsSchema,
+  alreadyRequested: loginsSchema,
+  unavailable: loginsSchema,
+  notFound: loginsSchema,
+  unconfirmed: loginsSchema,
+  dropped: loginsSchema,
+  gone: loginsSchema,
+});
+
+export type ReviewRequestOutcome = z.infer<typeof reviewRequestOutcomeSchema>;
+
+const removalOutcomeSchema = z.object({
+  removed: loginsSchema,
+  notRequested: loginsSchema,
+  unconfirmed: loginsSchema,
+  dropped: loginsSchema,
+});
+
+export type RemovalOutcome = z.infer<typeof removalOutcomeSchema>;
+
+const succeeded = z.literal(true);
+
+const failureSchema = z.object({ ok: z.literal(false), error: z.string() });
+
+export const requestReviewReplySchema = z.discriminatedUnion("ok", [
+  z.object({ ok: succeeded, outcome: reviewRequestOutcomeSchema }),
+  failureSchema,
+]);
+
+export type RequestReviewReply = z.infer<typeof requestReviewReplySchema>;
+
+export const listReviewersReplySchema = z.discriminatedUnion("ok", [
+  z.extend(reviewerListSchema, { ok: succeeded }),
+  failureSchema,
+]);
+
+export type ListReviewersReply = z.infer<typeof listReviewersReplySchema>;
+
+export const lookUpGroupReplySchema = z.discriminatedUnion("ok", [
+  z.extend(groupLookupSchema, { ok: succeeded }),
+  failureSchema,
+]);
+
+export type LookUpGroupReply = z.infer<typeof lookUpGroupReplySchema>;
+
+export const removeReviewersReplySchema = z.discriminatedUnion("ok", [
+  z.object({ ok: succeeded, outcome: removalOutcomeSchema }),
+  failureSchema,
+]);
+
+export type RemoveReviewersReply = z.infer<typeof removeReviewersReplySchema>;
+
+export const countOpenRequestsReplySchema = z.discriminatedUnion("ok", [
+  z.object({ ok: succeeded, count: z.int().check(z.nonnegative()) }),
+  z.extend(failureSchema, { limited: z.boolean() }),
+]);
+
+export type CountOpenRequestsReply = z.infer<typeof countOpenRequestsReplySchema>;
 
 export const listSentence = (prefix: string, logins: string[], suffix = "") =>
   logins.length > 0 ? `${prefix}${logins.join(", ")}.${suffix}` : "";

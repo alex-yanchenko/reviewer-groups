@@ -29,3 +29,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm build
+      - name: Lint the built extension with web-ext
+        run: |
+          report=$(pnpm exec web-ext lint --source-dir .output/chrome-mv3 --output json --no-config-discovery || true)
+          echo "$report" | jq -r '.errors[], .warnings[] | "\(.code) \(.file // "manifest") \(.message)"'
+          if ! echo "$report" | jq -e '[.errors[] | select(.code != "ADDON_ID_REQUIRED")] | length == 0' > /dev/null; then
+            echo "::error::web-ext lint found errors in the built extension."
+            exit 1
+          fi

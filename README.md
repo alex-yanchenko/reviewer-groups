@@ -35,28 +35,35 @@ The extension uses the github.com pages and endpoints that GitHub's own Reviewer
 
 ```bash
 pnpm install
-pnpm build          # writes the loadable extension to dist/
-pnpm dev            # rebuilds on change
+pnpm build          # writes the loadable extension to .output/chrome-mv3/
+pnpm dev            # opens Chrome with a development build from .output/chrome-mv3-dev/, rebuilt and reloaded on change
 pnpm check          # prettier, eslint, tsc, vitest
-pnpm package        # dist/ zipped for the Chrome Web Store
+pnpm package        # .output/reviewer-groups-<version>.zip for the Chrome Web Store
 pnpm screenshots    # regenerates docs/screenshots with invented people (needs Google Chrome)
 ```
 
-Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick the `dist/` folder.
+[WXT](https://wxt.dev) builds the extension. `wxt.config.ts` holds the manifest; the version comes from `package.json`. The pages and the page script are in `src/entrypoints/`: `popup/` and `options/` are the two extension pages, and `picker.ts` is an unlisted script, listed nowhere in the manifest, which the popup injects into the active tab with `chrome.scripting.executeScript`. Icons are in `public/icons/`.
+
+Load it: open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick the `.output/chrome-mv3/` folder.
+
+In development mode WXT adds the `tabs` permission, access to its dev server on `localhost` and a background script that reloads the extension on change. None of these are in the production build.
+
+CI also runs `web-ext lint` on the built extension and fails on any error except `ADDON_ID_REQUIRED`, which asks for a Firefox add-on ID (`browser_specific_settings.gecko.id`) that a Chrome-only manifest does not carry.
 
 ## Release
 
-A merge to `main` with a `feat`, `fix`, `perf` or `revert` commit opens or updates a release pull request; other commit types never start a release. In it, [release-please](https://github.com/googleapis/release-please) bumps the version in `package.json` and `manifest.json` and writes `CHANGELOG.md` from the Conventional Commit titles. Merging that pull request tags `vX.Y.Z` and publishes the GitHub release, which starts `.github/workflows/publish.yml`: it checks the tag against `manifest.json`, runs `pnpm check`, attaches `reviewer-groups-X.Y.Z.zip` to the release, and uploads the same zip to the Chrome Web Store and submits it for review. Google publishes it once the review passes.
+A merge to `main` with a `feat`, `fix`, `perf` or `revert` commit opens or updates a release pull request; other commit types never start a release. In it, [release-please](https://github.com/googleapis/release-please) bumps the version in `package.json`, the only place it is written (WXT copies it into the built manifest), and writes `CHANGELOG.md` from the Conventional Commit titles. Merging that pull request tags `vX.Y.Z` and publishes the GitHub release, which starts `.github/workflows/publish.yml`: it checks the tag against `package.json`, runs `pnpm check`, builds `.output/reviewer-groups-X.Y.Z.zip` with `pnpm package` and checks the version in its manifest, attaches the zip to the release, and uploads the same zip to the Chrome Web Store with [chrome-webstore-upload-cli](https://github.com/fregante/chrome-webstore-upload-cli) and submits it for review. Google publishes it once the review passes.
 
 The publish job needs, in the repository settings:
 
-| Name                                                      | Kind      | What it is                                                                                                                                                                                                                                               |
-| --------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`               | secrets   | A GitHub App installed on this repository, so the release pull request it opens runs CI and the release it publishes starts the publish workflow                                                                                                         |
-| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | secrets   | A Google OAuth client with the Chrome Web Store API enabled, and a refresh token for the store's developer account; the OAuth app's publishing status must be "In production", since a refresh token from an app in "Testing" stops working after 7 days |
-| `CWS_EXTENSION_ID`, `CWS_PUBLISHER_ID`                    | variables | The store item's ID, and the developer account's publisher ID from the dashboard's Account page                                                                                                                                                          |
+| Name                                                      | Kind     | What it is                                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`               | secrets  | A GitHub App installed on this repository, so the release pull request it opens runs CI and the release it publishes starts the publish workflow                                                                                                         |
+| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | secrets  | A Google OAuth client with the Chrome Web Store API enabled, and a refresh token for the store's developer account; the OAuth app's publishing status must be "In production", since a refresh token from an app in "Testing" stops working after 7 days |
+| `CWS_PUBLISHER_ID`                                        | secret   | The developer account's publisher ID from the dashboard's Account page; not a credential, kept as a secret so Actions logs mask it                                                                                                                       |
+| `CWS_EXTENSION_ID`                                        | variable | The store item's ID                                                                                                                                                                                                                                      |
 
-When a step before the store upload fails, re-run the publish job, or start it by hand from the Actions tab with the release tag. When the upload went through and only the submission failed, the store already holds that version and refuses a second upload of it: submit it for review in the developer dashboard. `CHANGELOG.md` and `manifest.json` are outside Prettier, because release-please rewrites both in a shape Prettier rejects. Store screenshots, the promo tile and the listing text are not part of the package; they change only in the developer dashboard, from `docs/store-listing.md` and `docs/screenshots/`.
+When a step before the store upload fails, re-run the publish job, or start it by hand from the Actions tab with the release tag. When the upload went through and only the submission failed, the store already holds that version and refuses a second upload of it: submit it for review in the developer dashboard. `CHANGELOG.md` is outside Prettier, because release-please rewrites it in a shape Prettier rejects. Store screenshots, the promo tile and the listing text are not part of the package; they change only in the developer dashboard, from `docs/store-listing.md` and `docs/screenshots/`.
 
 ## Limits
 

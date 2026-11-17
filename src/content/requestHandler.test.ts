@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { handleExtensionMessage } from "./requestHandler";
+import type { GitHubPage } from "./githubPage";
+import { pageHandlers } from "./requestHandler";
 import { createFakeGitHub, mountPullRequestPage } from "./testing/fakeGitHub";
+
+const handleExtensionMessage = (
+  page: GitHubPage,
+  { type, ...message }: { type: keyof typeof pageHandlers; [field: string]: unknown },
+) => pageHandlers[type](page, message);
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -157,12 +163,6 @@ describe("handleExtensionMessage", () => {
       { ok: false, error: "The request did not carry a valid search." },
     );
   });
-
-  it("ignores a message meant for something else", async () => {
-    const github = createFakeGitHub([]);
-
-    expect(await handleExtensionMessage(github.page, { type: "ping" })).toBeUndefined();
-  });
 });
 
 describe("handleExtensionMessage looking up a group", () => {
@@ -212,7 +212,7 @@ describe("handleExtensionMessage looking up a group", () => {
 
 describe("handleExtensionMessage removing reviewers", () => {
   const removeMessage = (pullRequest: string) => ({
-    type: "remove-reviewers",
+    type: "remove-reviewers" as const,
     session: "popup-1",
     pullRequest,
     members: ["ada-dev"],
@@ -241,7 +241,11 @@ describe("handleExtensionMessage removing reviewers", () => {
 });
 
 describe("handleExtensionMessage counting open review requests", () => {
-  const countMessage = (login: string) => ({ type: "count-open-requests", session: "popup-1", login });
+  const countMessage = (login: string) => ({
+    type: "count-open-requests" as const,
+    session: "popup-1",
+    login,
+  });
 
   it("answers with the count GitHub's search gives", async () => {
     mountPullRequestPage(document);

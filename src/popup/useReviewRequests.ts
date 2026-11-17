@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { Group } from "../groups/group";
 import {
@@ -12,6 +13,8 @@ import type { OpenRequestCounter } from "./openRequestCounter";
 import type { AskedBefore, RotationStore } from "./rotation";
 
 export const REMOVE_BUSY = "remove";
+
+const GROUP_LOOKUP = "group-lookup";
 
 export interface ReviewRequestTools {
   requestReview: (members: string[]) => Promise<RequestReviewReply>;
@@ -32,6 +35,7 @@ export const useReviewRequests = ({
   onGone,
   onWritten,
 }: ReviewRequestTools) => {
+  const queryClient = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [justRequested, setJustRequested] = useState<string[]>([]);
@@ -68,7 +72,8 @@ export const useReviewRequests = ({
     setBusy(group.id);
     setStatus("");
     const reply = await askGroup(group, {
-      lookUp: lookUpGroup,
+      lookUp: (members) =>
+        queryClient.fetchQuery({ queryKey: [GROUP_LOOKUP, members], queryFn: () => lookUpGroup(members) }),
       count: (login) => openRequests.count(login, { urgent: true }),
       request: requestReview,
       lastAsked: await rotation.load().catch(() => ({})),

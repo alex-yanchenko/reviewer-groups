@@ -1,6 +1,6 @@
 pnpm-lock.yaml
-dist/
+.output/
+.wxt/
 coverage/
 screenshots/.build/
 CHANGELOG.md
-manifest.json
